@@ -84,6 +84,24 @@ struct StudentDashboardView: View {
                             }
                         }
                         
+                        // Show Direction Button
+                        Button {
+                            let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: nearest.coordinate))
+                            mapItem.name = nearest.name
+                            mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking])
+                        } label: {
+                            HStack {
+                                Image(systemName: "safari.fill")
+                                Text("Show Direction")
+                                    .font(.subheadline.bold())
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(theme.current.accent)
+                            .foregroundStyle(.white)
+                            .cornerRadius(10)
+                        }
+                        
                         Divider()
                         
                         Text("AVAILABLE BUSES")

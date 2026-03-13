@@ -73,14 +73,12 @@ struct HomeView: View {
                 }
             }
             
-            // Persistent Bottom Bar for Admins
-            if SessionManager.shared.userRole == "admin" {
-                VStack {
-                    Spacer()
-                    bottomPinnedBar
-                }
-                .ignoresSafeArea(.keyboard)
+            // Persistent Bottom Bar for All Users
+            VStack {
+                Spacer()
+                bottomNavigationBar
             }
+            .ignoresSafeArea(.keyboard)
             
             // Permission Overlay
             if vm.showPermissions {
@@ -875,22 +873,38 @@ private extension HomeView {
 
 
 
-    var bottomPinnedBar: some View {
+    var bottomNavigationBar: some View {
         HStack(spacing: 0) {
-            // Bus/Home Tab
+            // Home Button
             Button {
-                showingManualSearch = true
+                withAnimation {
+                    vm.popToRoot()
+                }
             } label: {
                 VStack(spacing: 4) {
-                    Image(systemName: "bus.fill")
+                    Image(systemName: "house.fill")
                         .font(.system(size: 20))
                     Text("Home")
-                        .font(.caption2.weight(.medium))
+                        .font(.caption2.bold())
                 }
                 .frame(maxWidth: .infinity)
                 .foregroundStyle(theme.current.accent)
             }
             
+            // Nearby Stops Button
+            Button {
+                router.go(.studentDashboard)
+            } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 20))
+                    Text("Nearby Stops")
+                        .font(.caption2.bold())
+                }
+                .frame(maxWidth: .infinity)
+                .foregroundStyle(theme.current.secondaryText)
+            }
+
             // Fleet Activity Button (Only for Admins)
             if SessionManager.shared.userRole == "admin" {
                 Button {
@@ -900,20 +914,24 @@ private extension HomeView {
                         Image(systemName: "map.fill")
                             .font(.system(size: 20))
                         Text("Fleet Activity")
-                            .font(.caption2.weight(.medium))
+                            .font(.caption2.bold())
                     }
                     .frame(maxWidth: .infinity)
                     .foregroundStyle(theme.current.secondaryText)
                 }
             }
         }
-        .padding(.vertical, 12)
-        .background(theme.current.card.opacity(0.95))
+        .padding(.top, 12)
+        .padding(.bottom, 24)
+        .background(
+            theme.current.card
+                .shadow(color: Color.black.opacity(0.1), radius: 10, y: -5)
+        )
         .overlay(
             Rectangle()
                 .fill(theme.current.border)
-                .frame(height: 1),
-            alignment: .top
+                .frame(height: 1)
+                .frame(maxHeight: .infinity, alignment: .top)
         )
     }
 
