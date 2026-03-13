@@ -878,7 +878,7 @@ private extension HomeView {
             // Home Button
             Button {
                 withAnimation {
-                    vm.popToRoot()
+                    router.popToRoot()
                 }
             } label: {
                 VStack(spacing: 4) {
