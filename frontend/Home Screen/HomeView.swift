@@ -96,17 +96,39 @@ struct HomeView: View {
             vm.loadRecentSearches()
             SessionManager.shared.resetIdleTimer()
             
-            // Dynamic Header Logic
+            // Dynamic Header Logic (Restored transition)
             vm.prepareDynamicHeader()
-            // Wait 5 seconds, then slowly transition
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            // Wait 4 seconds, then transition to address/greeting
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
                 withAnimation(.easeInOut(duration: 1.5)) {
-                    vm.showDynamicHeader = false
+                    vm.showDynamicHeader = true
                 }
             }
         }
         .onTapGesture {
             SessionManager.shared.resetIdleTimer()
+        }
+        .overlay {
+            // Loading Overlay (Moved Lottie here)
+            if vm.isLoading {
+                ZStack {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                    
+                    VStack(spacing: 16) {
+                        LottieView(url: URL(string: "https://lottie.host/16b69e12-0efb-4061-b33d-12dc2b93fd84/Ax2k12jKRd.lottie")!)
+                            .frame(width: 200, height: 200)
+                        
+                        Text("Looking for your bus...")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                    }
+                    .padding(30)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(20)
+                }
+                .transition(.opacity)
+            }
         }
         .ignoresSafeArea(.all, edges: .top)
 
@@ -273,20 +295,30 @@ private extension HomeView {
                             .transition(.opacity)
                     } else {
                         VStack(spacing: 2) {
-                            Text("Where Is My Bus?")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white)
-                            
-                            HStack(spacing: 4) {
-                                Image(systemName: "mappin.circle.fill")
-                                    .font(.caption)
-                                Text(locationManager.currentAddress)
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                            if !vm.showDynamicHeader {
+                                Text("Where Is My Bus?")
+                                    .font(.system(size: 20, weight: .black, design: .rounded))
+                                    .foregroundStyle(.white)
+                                    .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), 
+                                                           removal: .move(edge: .bottom).combined(with: .opacity)))
+                            } else {
+                                VStack(spacing: 2) {
+                                    Text(vm.dynamicHeaderInfo)
+                                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.white)
+                                    
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "mappin.circle.fill")
+                                            .font(.caption)
+                                        Text(locationManager.currentAddress)
+                                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    }
+                                    .foregroundStyle(.white.opacity(0.9))
+                                }
+                                .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), 
+                                                       removal: .move(edge: .top).combined(with: .opacity)))
                             }
-                            .foregroundStyle(.white.opacity(0.9))
                         }
-                        .transition(.opacity)
-                        .animation(.easeInOut, value: locationManager.currentAddress)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -583,6 +615,7 @@ private extension HomeView {
         let tLon = vm.toStop?.lng
         
         Task {
+            vm.isLoading = true
             try? await APIService.shared.saveRecentSearch(
                 fromStopId: fid.isEmpty ? "unknown" : fid,
                 toStopId: tid.isEmpty ? "unknown" : tid,
@@ -590,19 +623,25 @@ private extension HomeView {
                 toName: tn,
                 userId: uid
             )
+            
+            // Short delay to ensure transition feels smooth with the loader
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            
+            await MainActor.run {
+                vm.isLoading = false
+                router.go(.availableBuses(
+                    from: fn,
+                    to: tn,
+                    fromID: fid,
+                    toID: tid,
+                    fromLat: fLat,
+                    fromLon: fLon,
+                    toLat: tLat,
+                    toLon: tLon,
+                    via: nil
+                ))
+            }
         }
-        
-        router.go(.availableBuses(
-            from: fn,
-            to: tn,
-            fromID: fid,
-            toID: tid,
-            fromLat: fLat,
-            fromLon: fLon,
-            toLat: tLat,
-            toLon: tLon,
-            via: nil
-        ))
     }
     
     var trackByNumberBar: some View {

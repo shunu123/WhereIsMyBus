@@ -46,6 +46,7 @@ final class HomeViewModel: ObservableObject {
     // MARK: - Dynamic Header
     @Published var dynamicHeaderInfo: String = ""
     @Published var showDynamicHeader: Bool = false
+    @Published var isLoading: Bool = false
 
     // MARK: - Router (set by HomeView.onAppear)
     var router: AppRouter?
@@ -72,6 +73,7 @@ final class HomeViewModel: ObservableObject {
         }
 
         Task {
+            isLoading = true
             do {
                 let user = SessionManager.shared.currentUser
                 let role = SessionManager.shared.userRole ?? "student"
@@ -89,6 +91,7 @@ final class HomeViewModel: ObservableObject {
             } catch {
                 print("Failed to load recent searches: \(error.localizedDescription)")
             }
+            isLoading = false
         }
     }
 
@@ -100,6 +103,7 @@ final class HomeViewModel: ObservableObject {
         
         // Show the search view as a fallback, but try direct navigation first
         Task {
+            isLoading = true
             do {
                 let trips = try await APIService.shared.searchTrips(fromStopId: search.from_stop_id, toStopId: search.to_stop_id)
                 
@@ -143,6 +147,7 @@ final class HomeViewModel: ObservableObject {
 
                 }
             }
+            isLoading = false
         }
     }
 

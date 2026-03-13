@@ -18,11 +18,27 @@ struct SplashView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 24) {
-                // Lottie Animation
-                LottieView(url: URL(string: "https://lottie.host/16b69e12-0efb-4061-b33d-12dc2b93fd84/Ax2k12jKRd.lottie")!)
-                    .frame(width: 300, height: 300)
-                    .scaleEffect(scale)
-                    .opacity(opacity)
+                // Pulsing Bus Logo (Restored)
+                ZStack {
+                    Circle()
+                        .fill(.white.opacity(0.15))
+                        .frame(width: 160, height: 160)
+                        .scaleEffect(isLogoPulsing ? 1.4 : 1.0)
+                        .opacity(isLogoPulsing ? 0 : 1)
+                    
+                    Circle()
+                        .fill(.white.opacity(0.2))
+                        .frame(width: 140, height: 140)
+                        .scaleEffect(isLogoPulsing ? 1.2 : 1.0)
+                    
+                    Image(systemName: "bus.fill")
+                        .font(.system(size: 70))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.1), radius: 10, y: 5)
+                }
+                .scaleEffect(scale)
+                .opacity(opacity)
+                .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false), value: isLogoPulsing)
                 
                 VStack(spacing: 12) {
                     // App Title
