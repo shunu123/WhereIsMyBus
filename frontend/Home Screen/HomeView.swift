@@ -611,6 +611,7 @@ private extension HomeView {
             
             await MainActor.run {
                 vm.isLoading = false
+                vm.loadRecentSearches()
                 router.go(.availableBuses(
                     from: fn,
                     to: tn,
@@ -754,6 +755,8 @@ private extension HomeView {
     private func handleRecentBusSelection(_ number: String) {
         vm.busNumberSearch = number
         if let bus = BusRepository.shared.allBuses.first(where: { $0.number.lowercased() == number.lowercased() }) {
+            BusSearchHistoryService.shared.save(number)
+            vm.loadRecentSearches()
             router.go(.busSchedule(busID: bus.id.uuidString, searchPoint: nil, destinationStop: nil))
         }
     }

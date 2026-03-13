@@ -74,22 +74,35 @@ final class HomeViewModel: ObservableObject {
 
         Task {
             isLoading = true
+            
+            // 1. Load local history immediately (Fast)
+            let localSearches = SearchHistoryService.shared.all().map { 
+                RecentSearch(id: Int.random(in: 1000...9999), from_stop_id: "local", to_stop_id: "local", from_name: $0.from, to_name: $0.to, ts: "")
+            }
+            let busNumbers = BusSearchHistoryService.shared.all()
+            
+            await MainActor.run {
+                self.recentSearches = localSearches
+                self.recentBusNumbers = busNumbers
+            }
+
+            // 2. Fetch from backend and merge (Might be slower)
             do {
                 let user = SessionManager.shared.currentUser
                 let role = SessionManager.shared.userRole ?? "student"
-                
-                // 1. Fetch from-to history from backend
-                let searches = try await APIService.shared.fetchRecentSearches(role: role, userId: user?.id)
-                
-                // 2. Load bus number history from local storage
-                let busNumbers = BusSearchHistoryService.shared.all()
+                let backendSearches = try await APIService.shared.fetchRecentSearches(role: role, userId: user?.id)
                 
                 await MainActor.run {
-                    self.recentSearches = searches
-                    self.recentBusNumbers = busNumbers
+                    var finalSearches = localSearches
+                    for b in backendSearches {
+                        if !finalSearches.contains(where: { $0.from_name == b.from_name && $0.to_name == b.to_name }) {
+                            finalSearches.append(b)
+                        }
+                    }
+                    self.recentSearches = finalSearches
                 }
             } catch {
-                print("Failed to load recent searches: \(error.localizedDescription)")
+                print("Failed to load backend searches: \(error.localizedDescription)")
             }
             isLoading = false
         }
@@ -105,6 +118,11 @@ final class HomeViewModel: ObservableObject {
         Task {
             isLoading = true
             do {
+                // If local/name-based, we might not have IDs
+                if search.from_stop_id == "local" || search.to_stop_id == "local" || search.from_stop_id == "unknown" {
+                    throw APIError.decodingError("Local search requires AvailableBusesView fallback")
+                }
+
                 let trips = try await APIService.shared.searchTrips(fromStopId: search.from_stop_id, toStopId: search.to_stop_id)
                 
                 await MainActor.run {

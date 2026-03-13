@@ -288,10 +288,21 @@ class AvailableBusesViewModel: ObservableObject {
             }
         }
         
-        // 2. If not found, try fetching stops from API (if possible)
+        // 2. If not found, try fetching stops from API (if possible) or look through repository
         if fromCoord == nil || toCoord == nil {
-            // Simplified fallback: use current location as start if searching from 'current'
-            // But generally we should have them from suggestion click
+            let allStops = BusRepository.shared.allBuses.flatMap { $0.route.stops }
+            
+            if fromCoord == nil {
+                fromCoord = allStops.first(where: { $0.name.localizedCaseInsensitiveContains(from) || from.localizedCaseInsensitiveContains($0.name) })?.coordinate.cl
+            }
+            if toCoord == nil {
+                toCoord = allStops.first(where: { $0.name.localizedCaseInsensitiveContains(to) || to.localizedCaseInsensitiveContains($0.name) })?.coordinate.cl
+            }
+        }
+        
+        // 3. Last fallback: Try to get from current location if 'from' is current/near
+        if fromCoord == nil && (from.lowercased().contains("current") || from.lowercased().contains("my loc")) {
+            fromCoord = LocationManager.shared.lastLocation?.coordinate
         }
 
         

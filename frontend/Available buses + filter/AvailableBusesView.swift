@@ -25,39 +25,55 @@ struct AvailableBusesView: View {
             theme.current.background.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Button { router.back() } label: {
-                        Image(systemName: "arrow.left")
-                            .font(.title2.bold())
-                            .foregroundStyle(theme.current.text)
-                    }
+                // Premium Header
+                ZStack(alignment: .bottom) {
+                    LinearGradient(colors: theme.current.primaryGradient, startPoint: .top, endPoint: .bottom)
+                        .ignoresSafeArea(edges: .top)
+                    
+                    HStack(spacing: 16) {
+                        Button { router.back() } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.title3.bold())
+                                .foregroundStyle(.white)
+                                .padding(8)
+                                .background(.white.opacity(0.1))
+                                .clipShape(Circle())
+                        }
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(origin)  →  \(destination)")
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 8) {
+                                Text(origin)
+                                Image(systemName: "arrow.right")
+                                    .font(.caption2.bold())
+                                    .opacity(0.7)
+                                Text(destination)
+                            }
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            
+                            if let via {
+                                Text("via \(via)")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.8))
+                            }
+                        }
 
-                            .font(.headline.bold())
-                            .foregroundStyle(theme.current.text)
-                        if let via {
-                            Text("via \(via)")
-                                .font(.caption)
-                                .foregroundStyle(theme.current.secondaryText)
+                        Spacer()
+
+                        Button { showFilter = true } label: {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(10)
+                                .background(.white.opacity(0.1))
+                                .clipShape(Circle())
                         }
                     }
-
-                    Spacer()
-
-                    Button { showFilter = true } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.title3)
-                            .foregroundStyle(theme.current.accent)
-                            .padding(8)
-                            .background(Circle().fill(theme.current.card))
-                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+                    .frame(height: 70)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(theme.current.card)
+                .frame(height: 120) // Including safe area
                 
                 // Route Map and Info Card
                 VStack(spacing: 0) {
