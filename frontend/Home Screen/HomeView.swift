@@ -96,14 +96,9 @@ struct HomeView: View {
             vm.loadRecentSearches()
             SessionManager.shared.resetIdleTimer()
             
-            // Dynamic Header Logic (Restored transition)
+            // Dynamic Header (Static)
             vm.prepareDynamicHeader()
-            // Wait 4 seconds, then transition to address/greeting
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-                withAnimation(.easeInOut(duration: 1.5)) {
-                    vm.showDynamicHeader = true
-                }
-            }
+            vm.showDynamicHeader = true
         }
         .onTapGesture {
             SessionManager.shared.resetIdleTimer()
@@ -299,22 +294,17 @@ private extension HomeView {
                                 .font(.system(size: 20, weight: .black, design: .rounded))
                                 .foregroundStyle(.white)
                             
-                            // Sub-header (Location/Greeting) shows if active
-                            if vm.showDynamicHeader {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "mappin.circle.fill")
-                                        .font(.caption2)
-                                    Text(locationManager.currentAddress)
-                                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                                }
-                                .foregroundStyle(.white.opacity(0.8))
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                            HStack(spacing: 4) {
+                                Image(systemName: "mappin.circle.fill")
+                                    .font(.caption2)
+                                Text(locationManager.currentAddress)
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
                             }
+                            .foregroundStyle(.white.opacity(0.8))
                         }
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .animation(.easeInOut(duration: 1.5), value: vm.showDynamicHeader)
                 .animation(.easeInOut(duration: 0.5), value: vm.voice.isListening)
 
                 // Left Action (Drawer)
