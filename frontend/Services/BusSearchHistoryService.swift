@@ -4,7 +4,7 @@ import Foundation
 final class BusSearchHistoryService {
     static let shared = BusSearchHistoryService()
     private let key = "bus_number_history"
-    private let maxItems = 10
+    private let maxItems = 5
 
     private init() {}
 

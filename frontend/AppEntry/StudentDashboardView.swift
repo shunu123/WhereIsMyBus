@@ -13,22 +13,27 @@ struct StudentDashboardView: View {
         ZStack(alignment: .bottom) {
             // MARK: - Map Layer
             Map(position: $position) {
-                // 1. User Location (Handled by MapContent)
                 UserAnnotation()
                 
-                // 2. Walking Route
-                if let route = vm.walkingRoute {
-                    MapPolyline(route)
-                        .stroke(theme.current.accent, lineWidth: 5)
+                // 2. Walking Routes
+                ForEach(vm.nearbyStops) { stop in
+                    if let route = vm.routes[stop.id] {
+                        MapPolyline(route)
+                            .stroke(stop.id == vm.selectedStop?.id ? theme.current.accent : theme.current.secondaryText.opacity(0.4), 
+                                    lineWidth: stop.id == vm.selectedStop?.id ? 5 : 3)
+                    }
                 }
                 
                 // 3. Nearby Bus Stops
-                ForEach(vm.allStops) { stop in
+                ForEach(vm.nearbyStops) { stop in
                     Annotation(stop.name, coordinate: stop.coordinate) {
                         Circle()
-                            .fill(stop.id == vm.nearestStop?.id ? .green : theme.current.secondaryText.opacity(0.3))
+                            .fill(stop.id == vm.selectedStop?.id ? .green : theme.current.secondaryText.opacity(0.3))
                             .frame(width: 12, height: 12)
                             .overlay(Circle().stroke(.white, lineWidth: 2))
+                            .onTapGesture {
+                                withAnimation { vm.selectStop(stop) }
+                            }
                     }
                 }
                 
@@ -62,98 +67,129 @@ struct StudentDashboardView: View {
                     .frame(width: 40, height: 5)
                     .padding(.top, 8)
                 
-                if let nearest = vm.nearestStop {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("NEAREST STOP")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(theme.current.secondaryText)
-                                Text(nearest.name)
-                                    .font(.title3.bold())
-                                    .foregroundStyle(theme.current.text)
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text(String(format: "%.1f km", vm.nearestStopDistance))
-                                    .font(.headline)
-                                    .foregroundStyle(theme.current.accent)
-                                Text("\(Int(vm.walkingTime / 60)) min walk")
-                                    .font(.caption2)
-                                    .foregroundStyle(theme.current.secondaryText)
+                VStack(alignment: .leading, spacing: 16) {
+                    // Stop Selector
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(vm.nearbyStops) { stop in
+                                Button {
+                                    withAnimation { vm.selectStop(stop) }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(stop.id == vm.nearbyStops.first?.id ? "PRIMARY" : "ALTERNATIVE")
+                                            .font(.system(size: 8, weight: .black))
+                                            .foregroundStyle(stop.id == vm.selectedStop?.id ? .white : theme.current.secondaryText)
+                                        Text(stop.name)
+                                            .font(.subheadline.bold())
+                                            .lineLimit(1)
+                                            .foregroundStyle(stop.id == vm.selectedStop?.id ? .white : theme.current.text)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .background(stop.id == vm.selectedStop?.id ? theme.current.accent : theme.current.card)
+                                    .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(theme.current.border, lineWidth: stop.id == vm.selectedStop?.id ? 0 : 1)
+                                    )
+                                }
                             }
                         }
-                        
-                        // Show Direction Button
-                        Button {
-                            let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: nearest.coordinate))
-                            mapItem.name = nearest.name
-                            mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking])
-                        } label: {
+                        .padding(.horizontal, 2)
+                    }
+                    
+                    if let selected = vm.selectedStop {
+                        VStack(alignment: .leading, spacing: 12) {
                             HStack {
-                                Image(systemName: "safari.fill")
-                                Text("Show Direction")
-                                    .font(.subheadline.bold())
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(theme.current.accent)
-                            .foregroundStyle(.white)
-                            .cornerRadius(10)
-                        }
-                        
-                        Divider()
-                        
-                        Text("AVAILABLE BUSES")
-                            .font(.caption2.bold())
-                            .foregroundStyle(theme.current.secondaryText)
-                        
-                        if vm.arrivingBuses.isEmpty {
-                            Text("No buses arriving soon.")
-                                .font(.subheadline)
-                                .foregroundStyle(theme.current.secondaryText)
-                                .padding(.vertical, 8)
-                        } else {
-                            ScrollView {
-                                VStack(spacing: 12) {
-                                    ForEach(vm.arrivingBuses) { bus in
-                                        HStack(spacing: 12) {
-                                            Circle()
-                                                .fill(theme.current.accent.opacity(0.1))
-                                                .frame(width: 40, height: 40)
-                                                .overlay(
-                                                    Image(systemName: "bus.fill")
-                                                        .foregroundStyle(theme.current.accent)
-                                                )
-                                            
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text("Bus \(bus.number)")
-                                                    .font(.subheadline.bold())
-                                                Text(bus.headsign)
-                                                    .font(.caption)
-                                                    .foregroundStyle(theme.current.secondaryText)
-                                            }
-                                            
-                                            Spacer()
-                                            
-                                            Text(bus.departsAt)
-                                                .font(.headline)
-                                                .foregroundStyle(theme.current.accent)
-                                        }
-                                        .padding(12)
-                                        .background(theme.current.card.opacity(0.5))
-                                        .cornerRadius(12)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("SELECTED STOP")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(theme.current.secondaryText)
+                                    Text(selected.name)
+                                        .font(.title3.bold())
+                                        .foregroundStyle(theme.current.text)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text(String(format: "%.1f km", vm.distances[selected.id] ?? 0))
+                                        .font(.headline)
+                                        .foregroundStyle(theme.current.accent)
+                                    if let time = vm.walkingTimes[selected.id] {
+                                        Text("\(Int(time / 60)) min walk")
+                                            .font(.caption2)
+                                            .foregroundStyle(theme.current.secondaryText)
                                     }
                                 }
                             }
-                            .frame(maxHeight: showFullPanel ? .infinity : 200)
+                            
+                            // Show Direction Button
+                            Button {
+                                let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: selected.coordinate))
+                                mapItem.name = selected.name
+                                mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking])
+                            } label: {
+                                HStack {
+                                    Image(systemName: "safari.fill")
+                                    Text("Show Direction")
+                                        .font(.subheadline.bold())
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(theme.current.accent)
+                                .foregroundStyle(.white)
+                                .cornerRadius(10)
+                            }
+                            
+                            Divider()
+                            
+                            Text("AVAILABLE BUSES")
+                                .font(.caption2.bold())
+                                .foregroundStyle(theme.current.secondaryText)
+                            
+                            if vm.arrivingBuses.isEmpty {
+                                Text("No buses arriving soon.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(theme.current.secondaryText)
+                                    .padding(.vertical, 8)
+                            } else {
+                                ScrollView {
+                                    VStack(spacing: 12) {
+                                        ForEach(vm.arrivingBuses) { bus in
+                                            HStack(spacing: 12) {
+                                                Circle()
+                                                    .fill(theme.current.accent.opacity(0.1))
+                                                    .frame(width: 40, height: 40)
+                                                    .overlay(
+                                                        Image(systemName: "bus.fill")
+                                                            .foregroundStyle(theme.current.accent)
+                                                    )
+                                                
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text("Bus \(bus.number)")
+                                                        .font(.subheadline.bold())
+                                                    Text(bus.headsign)
+                                                        .font(.caption)
+                                                        .foregroundStyle(theme.current.secondaryText)
+                                                }
+                                                
+                                                Spacer()
+                                                
+                                                Text(bus.departsAt)
+                                                    .font(.headline)
+                                                    .foregroundStyle(theme.current.accent)
+                                            }
+                                            .padding(12)
+                                            .background(theme.current.card.opacity(0.5))
+                                            .cornerRadius(12)
+                                        }
+                                    }
+                                }
+                                .frame(maxHeight: showFullPanel ? .infinity : 200)
+                            }
                         }
                     }
-                    .padding(20)
-                } else {
-                    ProgressView("Finding nearest stop...")
-                        .padding(40)
                 }
+                .padding(20)
             }
             .background(
                 theme.current.card

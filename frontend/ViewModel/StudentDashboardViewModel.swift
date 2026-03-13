@@ -6,13 +6,17 @@ import MapKit
 @MainActor
 final class StudentDashboardViewModel: ObservableObject {
     // MARK: - Published State
+    // MARK: - Published State
     @Published var currentUserLocation: CLLocation?
     @Published var allStops: [BusStop] = []
-    @Published var nearestStop: BusStop?
-    @Published var nearestStopDistance: Double = 0
-    @Published var walkingRoute: MKRoute?
-    @Published var walkingTime: TimeInterval = 0
     
+    // Top 2 Nearest Stops
+    @Published var nearbyStops: [BusStop] = []
+    @Published var routes: [String: MKRoute] = [:] // stopId -> route
+    @Published var walkingTimes: [String: TimeInterval] = [:] // stopId -> time
+    @Published var distances: [String: Double] = [:] // stopId -> km
+    
+    @Published var selectedStop: BusStop?
     @Published var arrivingBuses: [Bus] = []
     @Published var liveBuses: [String: WSVehicle] = [:] // vid -> vehicle
     
@@ -30,10 +34,18 @@ final class StudentDashboardViewModel: ObservableObject {
     
     init() {
         setupBindings()
+        
+        // Auto-select first stop when nearbyStops changes
+        $nearbyStops
+            .sink { [weak self] stops in
+                if let first = stops.first, self?.selectedStop == nil {
+                    self?.selectStop(first)
+                }
+            }
+            .store(in: &cancellables)
     }
     
     private func setupBindings() {
-        // Observe user location
         locationManager.$userLocation
             .sink { [weak self] location in
                 guard let self = self, let location = location else { return }
@@ -45,7 +57,6 @@ final class StudentDashboardViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
-        // Observe live bus updates from WebSocket
         wsService.gpsPublisher
             .sink { [weak self] vehicles in
                 guard let self = self else { return }
@@ -66,27 +77,21 @@ final class StudentDashboardViewModel: ObservableObject {
             error = nil
             
             do {
-                // 1. Fetch all stops if not already loaded
                 if allStops.isEmpty {
                     allStops = try await apiService.fetchAllStops()
                 }
                 
-                // 2. Find nearest stop using Dijkstra service
-                if let nearest = shortestPathService.findNearestStop(from: location.coordinate, to: allStops) {
-                    self.nearestStop = nearest
-                    self.nearestStopDistance = location.distance(from: CLLocation(latitude: nearest.lat, longitude: nearest.lng)) / 1000.0 // km
+                // Find top 2 nearest stops
+                let stops = shortestPathService.findNearestStops(from: location.coordinate, to: allStops, count: 2)
+                self.nearbyStops = stops
+                
+                for stop in stops {
+                    let d = location.distance(from: CLLocation(latitude: stop.lat, longitude: stop.lng)) / 1000.0
+                    self.distances[stop.id] = d
                     
-                    // 3. Calculate walking route
-                    calculateWalkingRoute(from: location.coordinate, to: nearest.coordinate)
-                    
-                    // 4. Fetch buses for this stop
-                    fetchBuses(for: nearest)
-                    
-                    // 5. Save search history
-                    saveSearch(nearest: nearest)
+                    calculateWalkingRoute(for: stop)
                 }
                 
-                // 6. Connect WebSocket for live updates
                 wsService.connect()
                 
             } catch {
@@ -97,20 +102,26 @@ final class StudentDashboardViewModel: ObservableObject {
         }
     }
     
-    private func calculateWalkingRoute(from source: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) {
+    func selectStop(_ stop: BusStop) {
+        self.selectedStop = stop
+        fetchBuses(for: stop)
+        saveSearch(nearest: stop)
+    }
+    
+    private func calculateWalkingRoute(for stop: BusStop) {
+        guard let location = currentUserLocation else { return }
+        
         let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: source))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: location.coordinate))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: stop.coordinate))
         request.transportType = .walking
         
         let directions = MKDirections(request: request)
         directions.calculate { [weak self] response, error in
-            guard let self = self else { return }
-            if let route = response?.routes.first {
-                DispatchQueue.main.async {
-                    self.walkingRoute = route
-                    self.walkingTime = route.expectedTravelTime
-                }
+            guard let self = self, let route = response?.routes.first else { return }
+            DispatchQueue.main.async {
+                self.routes[stop.id] = route
+                self.walkingTimes[stop.id] = route.expectedTravelTime
             }
         }
     }
@@ -145,6 +156,7 @@ final class StudentDashboardViewModel: ObservableObject {
     private func saveSearch(nearest: BusStop) {
         guard let location = currentUserLocation else { return }
         let studentId = SessionManager.shared.currentUser?.id ?? 0
+        let dist = distances[nearest.id] ?? 0
         
         Task {
             try? await apiService.saveStudentStopSearch(
@@ -152,7 +164,7 @@ final class StudentDashboardViewModel: ObservableObject {
                 lat: location.coordinate.latitude,
                 lng: location.coordinate.longitude,
                 nearestStopId: Int(nearest.id) ?? 0,
-                distance: nearestStopDistance
+                distance: dist
             )
         }
     }

@@ -39,11 +39,10 @@ struct HomeView: View {
                 
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 24) {
-                        if SessionManager.shared.userRole == "student" {
-                            studentDashboardCard
-                                .padding(.horizontal, 20)
-                                .padding(.top, 10)
-                        }
+                        // Track by Bus Number bar (Moved from middle to top position)
+                        trackByNumberBar
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
                         
                         // 1. Recent Buses (Priority)
                         recentBusesSection
@@ -52,10 +51,6 @@ struct HomeView: View {
                         
                         // 2. Recent Route Searches (Secondary)
                         recentRoutesSection
-                            .padding(.horizontal, 20)
-                        
-                        // Track by Bus Number bar
-                        trackByNumberBar
                             .padding(.horizontal, 20)
                         
                         if vm.isHistoryMode && SessionManager.shared.userRole == "admin" {
@@ -742,40 +737,6 @@ private extension HomeView {
         }
     }
 
-    var studentDashboardCard: some View {
-        Button {
-            router.go(.studentDashboard)
-        } label: {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("FIND NEAREST STOP")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(theme.current.accent)
-                    Text("Student Dashboard")
-                        .font(.title3.bold())
-                        .foregroundStyle(theme.current.text)
-                    Text("Locate the closest bus stop and see walking directions.")
-                        .font(.caption)
-                        .foregroundStyle(theme.current.secondaryText)
-                        .multilineTextAlignment(.leading)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "location.magnifyingglass")
-                    .font(.system(size: 30))
-                    .foregroundStyle(theme.current.accent)
-            }
-            .padding(20)
-            .background(theme.current.card)
-            .cornerRadius(16)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(theme.current.border, lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
-        }
-    }
 
     var recentBusesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
