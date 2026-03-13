@@ -304,7 +304,17 @@ class AvailableBusesViewModel: ObservableObject {
             let result = try await RoutingService.shared.calculateRoute(from: start, to: end)
             self.routePolyline = result.polyline
             self.estimatedDistance = String(format: "%.1f km", result.distanceMeters / 1000.0)
-            self.estimatedTime = String(format: "%.0f min", result.travelTimeSeconds / 60.0)
+            let mins = result.travelTimeSeconds / 60.0
+            self.estimatedTime = String(format: "%.0f min", mins)
+            
+            // Update individual buses with this accurate estimation
+            let roundedMins = Int(mins)
+            for i in 0..<self.buses.count {
+                self.buses[i].etaMinutes = roundedMins
+                self.buses[i].durationText = "\(roundedMins)m"
+            }
+            updateFiltering()
+            
         } catch {
             print("Routing: Failed to calculate route: \(error)")
         }
