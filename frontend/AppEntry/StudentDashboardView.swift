@@ -13,17 +13,28 @@ struct StudentDashboardView: View {
         ZStack(alignment: .bottom) {
             // MARK: - Map Layer
             Map(position: $position) {
-                UserAnnotation()
+                // 1. User Location with Navigation Symbol
+                if let userLoc = vm.currentUserLocation {
+                    Annotation("You", coordinate: userLoc.coordinate) {
+                        Image(systemName: "location.north.line.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(8)
+                            .background(theme.current.accent)
+                            .clipShape(Circle())
+                            .shadow(radius: 5)
+                    }
+                }
                 
-                // 2. Walking Routes (Simultaneous)
+                // 2. Walking Routes (Simultaneous, from user location)
                 ForEach(vm.nearbyStops) { stop in
                     if let route = vm.routes[stop.id] {
                         MapPolyline(route)
-                            .stroke(stop.id == vm.nearbyStops.first?.id ? theme.current.accent : theme.current.secondaryText.opacity(0.6), 
-                                    style: StrokeStyle(lineWidth: stop.id == vm.nearbyStops.first?.id ? 6 : 4, 
+                            .stroke(stop.id == vm.selectedStop?.id ? theme.current.accent : theme.current.secondaryText.opacity(0.4), 
+                                    style: StrokeStyle(lineWidth: stop.id == vm.selectedStop?.id ? 7 : 4, 
                                                        lineCap: .round, 
                                                        lineJoin: .round, 
-                                                       dash: stop.id == vm.nearbyStops.first?.id ? [] : [10, 5]))
+                                                       dash: stop.id == vm.selectedStop?.id ? [] : [8, 4]))
                     }
                 }
                 
