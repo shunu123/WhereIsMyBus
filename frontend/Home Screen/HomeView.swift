@@ -39,10 +39,10 @@ struct HomeView: View {
                 
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 24) {
-                        // Track by Bus Number bar (Moved from middle to top position)
+                        // Track by Bus Number bar
                         trackByNumberBar
                             .padding(.horizontal, 20)
-                            .padding(.top, 10)
+                            .padding(.top, 25) // Increased padding to clear search card shadow
                         
                         // 1. Recent Buses (Priority)
                         recentBusesSection
@@ -295,28 +295,20 @@ private extension HomeView {
                             .transition(.opacity)
                     } else {
                         VStack(spacing: 2) {
-                            if !vm.showDynamicHeader {
-                                Text("Where Is My Bus?")
-                                    .font(.system(size: 20, weight: .black, design: .rounded))
-                                    .foregroundStyle(.white)
-                                    .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), 
-                                                           removal: .move(edge: .bottom).combined(with: .opacity)))
-                            } else {
-                                VStack(spacing: 2) {
-                                    Text(vm.dynamicHeaderInfo)
-                                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.white)
-                                    
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "mappin.circle.fill")
-                                            .font(.caption)
-                                        Text(locationManager.currentAddress)
-                                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    }
-                                    .foregroundStyle(.white.opacity(0.9))
+                            Text("Where Is My Bus?")
+                                .font(.system(size: 20, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                            
+                            // Sub-header (Location/Greeting) shows if active
+                            if vm.showDynamicHeader {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "mappin.circle.fill")
+                                        .font(.caption2)
+                                    Text(locationManager.currentAddress)
+                                        .font(.system(size: 11, weight: .medium, design: .rounded))
                                 }
-                                .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), 
-                                                       removal: .move(edge: .top).combined(with: .opacity)))
+                                .foregroundStyle(.white.opacity(0.8))
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
                             }
                         }
                     }

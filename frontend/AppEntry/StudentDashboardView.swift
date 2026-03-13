@@ -15,25 +15,47 @@ struct StudentDashboardView: View {
             Map(position: $position) {
                 UserAnnotation()
                 
-                // 2. Walking Routes
+                // 2. Walking Routes (Simultaneous)
                 ForEach(vm.nearbyStops) { stop in
                     if let route = vm.routes[stop.id] {
                         MapPolyline(route)
-                            .stroke(stop.id == vm.selectedStop?.id ? theme.current.accent : theme.current.secondaryText.opacity(0.4), 
-                                    lineWidth: stop.id == vm.selectedStop?.id ? 5 : 3)
+                            .stroke(stop.id == vm.nearbyStops.first?.id ? theme.current.accent : theme.current.secondaryText.opacity(0.6), 
+                                    style: StrokeStyle(lineWidth: stop.id == vm.nearbyStops.first?.id ? 6 : 4, 
+                                                       lineCap: .round, 
+                                                       lineJoin: .round, 
+                                                       dash: stop.id == vm.nearbyStops.first?.id ? [] : [10, 5]))
                     }
                 }
                 
-                // 3. Nearby Bus Stops
+                // 3. Nearby Bus Stops & Labels
                 ForEach(vm.nearbyStops) { stop in
-                    Annotation(stop.name, coordinate: stop.coordinate) {
-                        Circle()
-                            .fill(stop.id == vm.selectedStop?.id ? .green : theme.current.secondaryText.opacity(0.3))
-                            .frame(width: 12, height: 12)
-                            .overlay(Circle().stroke(.white, lineWidth: 2))
-                            .onTapGesture {
-                                withAnimation { vm.selectStop(stop) }
+                    Annotation(coordinate: stop.coordinate, anchor: .bottom) {
+                        VStack(spacing: 4) {
+                            // Map Label (Distance/Time)
+                            HStack(spacing: 4) {
+                                Text(String(format: "%.1fkm", vm.distances[stop.id] ?? 0))
+                                    .font(.system(size: 10, weight: .bold))
+                                if let time = vm.walkingTimes[stop.id] {
+                                    Text("(\(Int(time / 60))m)")
+                                        .font(.system(size: 8))
+                                }
                             }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.white)
+                            .cornerRadius(4)
+                            .shadow(radius: 2)
+                            
+                            Circle()
+                                .fill(stop.id == vm.nearbyStops.first?.id ? .green : .blue)
+                                .frame(width: 14, height: 14)
+                                .overlay(Circle().stroke(.white, lineWidth: 2))
+                        }
+                        .onTapGesture {
+                            withAnimation { vm.selectStop(stop) }
+                        }
+                    } label: {
+                        Text(stop.name)
                     }
                 }
                 
@@ -68,41 +90,11 @@ struct StudentDashboardView: View {
                     .padding(.top, 8)
                 
                 VStack(alignment: .leading, spacing: 16) {
-                    // Stop Selector
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(vm.nearbyStops) { stop in
-                                Button {
-                                    withAnimation { vm.selectStop(stop) }
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(stop.id == vm.nearbyStops.first?.id ? "PRIMARY" : "ALTERNATIVE")
-                                            .font(.system(size: 8, weight: .black))
-                                            .foregroundStyle(stop.id == vm.selectedStop?.id ? .white : theme.current.secondaryText)
-                                        Text(stop.name)
-                                            .font(.subheadline.bold())
-                                            .lineLimit(1)
-                                            .foregroundStyle(stop.id == vm.selectedStop?.id ? .white : theme.current.text)
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 10)
-                                    .background(stop.id == vm.selectedStop?.id ? theme.current.accent : theme.current.card)
-                                    .cornerRadius(12)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(theme.current.border, lineWidth: stop.id == vm.selectedStop?.id ? 0 : 1)
-                                    )
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 2)
-                    }
-                    
                     if let selected = vm.selectedStop {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("SELECTED STOP")
+                                    Text(selected.id == vm.nearbyStops.first?.id ? "NEAREST STOP" : "ALTERNATIVE STOP")
                                         .font(.caption2.bold())
                                         .foregroundStyle(theme.current.secondaryText)
                                     Text(selected.name)
@@ -130,7 +122,7 @@ struct StudentDashboardView: View {
                             } label: {
                                 HStack {
                                     Image(systemName: "safari.fill")
-                                    Text("Show Direction")
+                                    Text("Open in Maps for Directions")
                                         .font(.subheadline.bold())
                                 }
                                 .frame(maxWidth: .infinity)
