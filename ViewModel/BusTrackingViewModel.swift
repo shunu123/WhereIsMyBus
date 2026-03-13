@@ -3,65 +3,59 @@ import SwiftUI
 import Combine
 import CoreLocation
 
-// 1. HELPER MAP: This tells Swift how to read your JSON structure
-struct ScheduleRoot: Codable {
-    let route_name: String
-    let stops: [BusStop]
-}
-
-// BusStop is now defined in Model/BusStop.swift
-
-// 2. VIEWMODEL: This is your main class that matches the file name
+// VIEWMODEL: Fetches bus schedule and live location from FastAPI
+@MainActor
 class BusTrackingViewModel: ObservableObject {
-    @Published var schedule: [BusStop] = []
-    @Published var currentBus: VehicleLive?
+    @Published var schedule: [TimelineStop] = []
+    @Published var currentBus: GPSPoint?
     @Published var etaMinutes: Int = 0
+    @Published var isLoading: Bool = false
     
-    let busId: String
-    private let baseURL = "https://where-is-my-bus-6ae1a-default-rtdb.asia-southeast1.firebasedatabase.app"
+    let tripId: String
     
-    init(busId: String) {
-        self.busId = busId
-        fetchSchedule()
-        observeLiveLocation()
+    init(tripId: String) {
+        self.tripId = tripId
+        Task { await fetchSchedule() }
+        Task { await observeLiveLocation() }
     }
     
-    func fetchSchedule() {
-        // Path: /bus_metadata/101.json
-        guard let url = URL(string: "\(baseURL)/bus_metadata/\(busId).json") else { return }
-        
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            if let data = data {
-                do {
-                    // We use the 'ScheduleRoot' map here to find the 'stops' list
-                    let decodedData = try JSONDecoder().decode(ScheduleRoot.self, from: data)
-                    DispatchQueue.main.async {
-                        self.schedule = decodedData.stops
-                    }
-                } catch {
-                    print("Decoding Error: \(error)")
-                }
+    func fetchSchedule() async {
+        isLoading = true
+        do {
+            // Support both internal (INT) and external (STRING) IDs
+            if let intId = Int(tripId) {
+                self.schedule = try await APIService.shared.fetchTimeline(tripId: intId)
+            } else {
+                self.schedule = try await APIService.shared.fetchTimeline(extTripId: tripId)
             }
-        }.resume()
+        } catch {
+            print("Schedule Fetch Error: \(error)")
+        }
+        isLoading = false
     }
     
-    func observeLiveLocation() {
-        // Path: /live_buses/Bus_101.json
-        guard let url = URL(string: "\(baseURL)/live_buses/Bus_\(busId).json") else { return }
-        
-        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
-            URLSession.shared.dataTask(with: url) { data, _, _ in
-                if let data = data {
-                    do {
-                        let location = try JSONDecoder().decode(VehicleLive.self, from: data)
-                        DispatchQueue.main.async {
-                            self.currentBus = location
-                        }
-                    } catch {
-                        print("Location Error: \(error)")
+    func observeLiveLocation() async {
+        // Poll every 5-10 seconds for live GPS from our backend
+        while !Task.isCancelled {
+            do {
+                let tid = Int(tripId)
+                let etid = tid == nil ? tripId : nil
+                
+                if let location = try await APIService.shared.fetchLatestGPS(tripId: tid, extTripId: etid) {
+                    self.currentBus = location
+
+                    // Real ETA: use delay_min from GTFS-RT if available
+                    if let delayMin = location.delay_min, delayMin > 0 {
+                        self.etaMinutes = Int(delayMin.rounded())
+                    } else if let lastStop = schedule.last, let delay = lastStop.delaySec {
+                        // Fallback: scheduled time remaining to last stop
+                        self.etaMinutes = delay / 60
                     }
                 }
-            }.resume()
+            } catch {
+                print("Live Location Error: \(error)")
+            }
+            try? await Task.sleep(nanoseconds: 7_000_000_000) // 7 seconds
         }
     }
 }

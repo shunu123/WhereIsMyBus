@@ -33,7 +33,7 @@ struct BusesAtStopView: View {
                             from: vm.stopName,
                             to: bus.route.to
                         ) {
-                            router.go(.busSchedule(busID: bus.id))
+                            router.go(.busSchedule(busID: bus.id.uuidString, searchPoint: vm.stopName))
                         }
                     }
                 }

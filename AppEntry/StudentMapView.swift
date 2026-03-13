@@ -1,6 +1,5 @@
 import SwiftUI
 import MapKit
-import FirebaseDatabase
 
 struct StudentMapView: View {
     @EnvironmentObject var theme: ThemeManager
@@ -37,19 +36,7 @@ struct StudentMapView: View {
 
     // 3. ETA and Movement Logic
     func observeBusMovement() {
-        Database.database().reference().child("live_buses/\(busID)").observe(.value) { snapshot in
-            guard let dict = snapshot.value as? [String: Any],
-                  let lat = dict["latitude"] as? Double,
-                  let lon = dict["longitude"] as? Double else { return }
-            
-            let newCoords = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-            
-            withAnimation(.easeInOut) {
-                self.busLocation = newCoords
-                self.position = .camera(MapCamera(centerCoordinate: newCoords, distance: 1000))
-            }
-            calculateCurrentStop(lat: lat, lon: lon)
-        }
+        // Firebase listen removed
     }
 
     func calculateCurrentStop(lat: Double, lon: Double) {

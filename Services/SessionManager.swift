@@ -16,45 +16,48 @@ class SessionManager: ObservableObject {
         }
     }
     
-    private var idleTimer: Timer?
-    private let idleInterval: TimeInterval = 300 // 5 minutes
-    
-    private init() {
-        self.isLoggedIn = UserDefaults.standard.bool(forKey: "isLoggedIn")
-        self.currentUserRegNo = UserDefaults.standard.string(forKey: "currentUserRegNo")
-        if isLoggedIn {
-            startIdleTimer()
+    @Published var userRole: String? {
+        didSet {
+            UserDefaults.standard.set(userRole, forKey: "userRole")
         }
     }
     
-    func login(regNo: String) {
-        self.currentUserRegNo = regNo
-        self.isLoggedIn = true
-        startIdleTimer()
-    }
-    
-    func logout() {
-        self.currentUserRegNo = nil
-        self.isLoggedIn = false
-        stopIdleTimer()
-    }
-    
-    func resetIdleTimer() {
-        guard isLoggedIn else { return }
-        stopIdleTimer()
-        startIdleTimer()
-    }
-    
-    private func startIdleTimer() {
-        idleTimer = Timer.scheduledTimer(withTimeInterval: idleInterval, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.logout()
+    @Published var currentUser: User? {
+        didSet {
+            if let user = currentUser, let encoded = try? JSONEncoder().encode(user) {
+                UserDefaults.standard.set(encoded, forKey: "currentUser")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "currentUser")
             }
         }
     }
     
-    private func stopIdleTimer() {
-        idleTimer?.invalidate()
-        idleTimer = nil
+    private init() {
+        self.isLoggedIn = UserDefaults.standard.bool(forKey: "isLoggedIn")
+        self.currentUserRegNo = UserDefaults.standard.string(forKey: "currentUserRegNo")
+        self.userRole = UserDefaults.standard.string(forKey: "userRole")
+        
+        if let savedUser = UserDefaults.standard.data(forKey: "currentUser"),
+           let user = try? JSONDecoder().decode(User.self, from: savedUser) {
+            self.currentUser = user
+        }
+    }
+    
+    func login(user: User) {
+        self.currentUserRegNo = user.reg_no
+        self.userRole = user.role
+        self.currentUser = user
+        self.isLoggedIn = true
+    }
+    
+    func logout() {
+        self.currentUserRegNo = nil
+        self.userRole = nil
+        self.currentUser = nil
+        self.isLoggedIn = false
+    }
+
+    func resetIdleTimer() {
+        // Disabled auto-logout
     }
 }

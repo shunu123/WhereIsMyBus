@@ -6,51 +6,45 @@ struct TimelineScheduleView: View {
     let from: String // Search points for the card
     let to: String
     let onSelectBus: (Bus) -> Void
+    let onLoadMore: () -> Void
     
-    @StateObject private var dummyVM = AvailableBusesViewModel() // We might want to pass the VM or use sections from parent
+    @StateObject private var availableBusesVM = AvailableBusesViewModel()
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // We use the buses array from parent, but logically we should separate them
-                // For now, let's categorize them here or expect parent to pass categorizeable data
-                
-                let upcoming = buses.filter { $0.statusRelativeTo(stopName: from) == .arriving || $0.statusRelativeTo(stopName: from) == .arrived }
-                let scheduled = buses.filter { $0.trackingStatus == .scheduled }
-                let departed = buses.filter { $0.statusRelativeTo(stopName: from) == .departed }
+                let grouped = Dictionary(grouping: buses, by: { $0.number })
+                let sortedKeys = grouped.keys.sorted()
 
-                if !upcoming.isEmpty {
+                ForEach(sortedKeys, id: \.self) { routeNo in
                     VStack(alignment: .leading, spacing: 12) {
-                        sectionHeader(title: "UPCOMING BUSES", color: .blue)
-                        ForEach(upcoming) { bus in
+                        sectionHeader(title: "ROUTE \(routeNo)", color: theme.current.accent)
+                        
+                        let sortedBuses = grouped[routeNo]?.sorted { $0.departsAt < $1.departsAt } ?? []
+                        
+                        ForEach(sortedBuses) { bus in
                             BusResultCard(bus: bus, from: from, to: to) {
                                 onSelectBus(bus)
+                            }
+                            .onAppear {
+                                if bus.id == sortedBuses.last?.id && routeNo == sortedKeys.last {
+                                    onLoadMore()
+                                }
                             }
                         }
                     }
                 }
 
-                if !scheduled.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        sectionHeader(title: "SCHEDULED", color: .gray)
-                        ForEach(scheduled) { bus in
-                            BusResultCard(bus: bus, from: from, to: to) {
-                                onSelectBus(bus)
-                            }
-                        }
+                if buses.isEmpty {
+                    VStack(spacing: 20) {
+                        Image(systemName: "bus.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(theme.current.accent.opacity(0.3))
+                        Text("No buses found for this route segment.")
+                            .font(.headline)
+                            .foregroundStyle(theme.current.secondaryText)
                     }
-                }
-
-                if !departed.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        sectionHeader(title: "DEPARTED (MISSED)", color: .red)
-                        ForEach(departed) { bus in
-                            BusResultCard(bus: bus, from: from, to: to) {
-                                onSelectBus(bus)
-                            }
-                        }
-                        .opacity(0.7)
-                    }
+                    .padding(.top, 100)
                 }
             }
             .padding(16)
@@ -117,6 +111,16 @@ struct TimelineBusRow: View {
                         
                     Spacer()
                     
+                    if bus.isNightOwl {
+                        Text("24/7")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.indigo)
+                            .cornerRadius(4)
+                    }
+
                     if bus.isDeviated {
                         Text("DEVIATED")
                             .font(.caption.bold())

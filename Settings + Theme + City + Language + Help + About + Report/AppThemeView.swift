@@ -6,13 +6,9 @@ struct AppThemeView: View {
     
     // Theme data with colors
     let themes: [(AppTheme, [Color])] = [
-        (.sunset, [Color(red: 1.0, green: 0.3, blue: 0.0), Color(red: 1.0, green: 0.58, blue: 0.0), Color(red: 1.0, green: 0.8, blue: 0.0)]),
-        (.ocean, [Color(red: 0.0, green: 0.75, blue: 1.0), Color(red: 0.53, green: 0.81, blue: 0.98), Color(red: 1.0, green: 0.84, blue: 0.0)]),
-        (.fadedGradient, [Color(red: 0.9, green: 0.85, blue: 1.0), Color(red: 0.8, green: 0.9, blue: 1.0), Color(red: 0.75, green: 0.95, blue: 0.9)]),
-        (.goldenHour, [Color(red: 1.0, green: 0.8, blue: 0.4), Color(red: 1.0, green: 0.6, blue: 0.2), Color(red: 1.0, green: 0.9, blue: 0.6)]),
-        (.lavender, [Color(red: 0.7, green: 0.5, blue: 0.9), Color(red: 0.9, green: 0.6, blue: 0.8), Color(red: 1.0, green: 0.8, blue: 0.8)]),
-        (.forest, [Color(red: 0.0, green: 0.4, blue: 0.3), Color(red: 0.1, green: 0.6, blue: 0.4), Color(red: 0.4, green: 0.8, blue: 0.5)]),
-        (.aurora, [Color(red: 0.4, green: 0.0, blue: 0.8), Color(red: 0.0, green: 0.8, blue: 1.0), Color(red: 0.0, green: 1.0, blue: 0.5)])
+        (.collegeNormal, [Color(red: 0.0, green: 0.35, blue: 0.75), Color(red: 0.0, green: 0.55, blue: 1.0), Color(red: 0.2, green: 0.7, blue: 1.0)]),
+        (.midnightLuxury, [Color(red: 0.6, green: 0.5, blue: 0.2), Color(red: 0.85, green: 0.75, blue: 0.5), Color(red: 0.95, green: 0.9, blue: 0.7)]),
+        (.frostGlass, [Color.white.opacity(0.5), Color(red: 0.2, green: 0.6, blue: 0.8).opacity(0.6), Color(red: 0.1, green: 0.5, blue: 0.9).opacity(0.8)])
     ]
 
     var body: some View {
@@ -116,6 +112,69 @@ struct AppThemeView: View {
                         RoundedRectangle(cornerRadius: 12)
                             .stroke(theme.current.border, lineWidth: 1)
                     )
+                    
+                    // Customization
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Customizations")
+                            .font(.headline)
+                            .foregroundStyle(theme.current.text)
+                            .padding(.horizontal, 16)
+                            
+                        VStack(spacing: 0) {
+                            // Text Color
+                            HStack {
+                                Text("Text Color (Theme-wide)")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(theme.current.text)
+                                Spacer()
+                                ColorPicker("", selection: Binding(
+                                    get: {
+                                        if !theme.customTextColorHex.isEmpty, let c = Color(hex: theme.customTextColorHex) { return c }
+                                        return theme.current.text
+                                    },
+                                    set: { newColor in
+                                        theme.customTextColorHex = newColor.toHex() ?? ""
+                                    }
+                                ))
+                                .labelsHidden()
+                            }
+                            .padding(16)
+                            
+                            Divider().padding(.leading, 16)
+                            
+                            // Font Selection
+                            HStack {
+                                Text("App Font")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(theme.current.text)
+                                Spacer()
+                                Picker("Font", selection: $theme.customFontName) {
+                                    Text("System (Default)").tag("")
+                                    Text("Avenir").tag("Avenir")
+                                    Text("Helvetica Neue").tag("HelveticaNeue")
+                                    Text("Courier New").tag("CourierNewPSMT")
+                                }
+                                .tint(theme.current.secondaryText)
+                            }
+                            .padding(16)
+                        }
+                        .background(theme.current.background)
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(theme.current.border, lineWidth: 1)
+                        )
+                    }
+                    
+                    // Reset
+                    if !theme.customTextColorHex.isEmpty || !theme.customFontName.isEmpty {
+                        Button("Reset Customizations") {
+                            theme.customTextColorHex = ""
+                            theme.customFontName = ""
+                        }
+                        .foregroundStyle(theme.current.accent)
+                        .padding(.top, 8)
+                    }
                 }
                 .padding(16)
             }

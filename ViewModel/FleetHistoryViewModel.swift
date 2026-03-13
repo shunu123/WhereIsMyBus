@@ -28,14 +28,19 @@ final class FleetHistoryViewModel: ObservableObject {
         static func == (lhs: RouteInfo, rhs: RouteInfo) -> Bool { lhs.id == rhs.id }
         
         var strokeStyle: StrokeStyle {
-            switch startCity {
-            case "Kancheepuram":
-                return StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round, dash: [10, 5])
-            case "Vellore":
-                return StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)
-            default:
-                return StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
-            }
+            return StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)
+        }
+        
+        var routeColor: Color {
+            let lower = startCity.lowercased()
+            if lower.contains("chennai") { return .blue }
+            if lower.contains("kancheepuram") { return .purple }
+            if lower.contains("vellore") { return .orange }
+            if lower.contains("thiruvallur") { return .green }
+            if lower.contains("tambaram") { return .cyan }
+            if lower.contains("poonamallee") { return .indigo }
+            if lower.contains("avadi") { return .pink }
+            return .red
         }
     }
     
@@ -52,6 +57,7 @@ final class FleetHistoryViewModel: ObservableObject {
         let endTime: String
         let reachedTime: String?
         let duration: String
+        let stops: [HistoryStop]
         
         var segments: [PathSegment] {
             guard !actualPolyline.isEmpty else { return [] }
@@ -131,100 +137,93 @@ final class FleetHistoryViewModel: ObservableObject {
         selectedTrip = nil
         
         Task {
-            // 1. Use BusRepository to get known vehicles (static + live updates)
-            // This is more reliable than fetching from a potentially offline component
-            let knownBuses = BusRepository.shared.allBuses
+            let dateKey = DateFormatter()
+            dateKey.dateFormat = "yyyy-MM-dd"
+            let dateString = dateKey.string(from: date)
             
-            let calendar = Calendar.current
-            let start = calendar.startOfDay(for: date)
-            let end = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: date) ?? date
-            
-            var fetchedTrips: [HistoryTripDisplay] = []
-            let dateFormatter = ISO8601DateFormatter()
-            let displayFormatter = DateFormatter()
-            displayFormatter.dateFormat = "HH:mm"
-            
-            for bus in knownBuses {
-                // Logic:
-                // 1. Try to fetch history from backend if available
-                // 2. If it fails or returns empty (and we are in a demo/no-backend env),
-                //    simulate a trip if one exists in the bus.tripHistory (from local data/demo data)
+            do {
+                let fleetData = try await APIService.shared.fetchFleetHistory(date: dateString)
+                var fetchedTrips: [HistoryTripDisplay] = []
                 
-                var historyPoints: [VehicleHistoryPoint] = []
-                var usedFallback = false
+                let isoFormatter = ISO8601DateFormatter()
+                isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let basicFormatter = ISO8601DateFormatter()
+                let displayFormatter = DateFormatter()
+                displayFormatter.dateFormat = "hh:mm a"
                 
-                let dateKey = DateFormatter()
-                dateKey.dateFormat = "yyyy-MM-dd"
-                let dateString = dateKey.string(from: date)
-                
-                do {
-                    historyPoints = try await BackendAPI.shared.fetchVehicleHistory(busId: bus.number, date: dateString)
-                } catch {
-                    print("History fetch failed for \(bus.number), trying local fallback...")
-                    usedFallback = true
-                }
-                
-                if historyPoints.isEmpty && usedFallback {
-                    // FALLBACK: Use local trip history if available for this date
-                    if let record = bus.tripHistory[dateString] {
-                        let trip = HistoryTripDisplay(
-                            id: UUID(),
-                            busNumber: bus.number,
-                            busId: bus.id,
-                            routeName: "\(bus.route.from) → \(bus.route.to)",
-                            startCity: bus.route.from,
-                            actualPolyline: record.actualPolyline,
-                            isDeviated: record.isDeviated,
-                            status: record.status,
-                            startTime: "Simulated",
-                            endTime: "Simulated",
-                            reachedTime: "Simulated",
-                            duration: bus.durationText
-                        )
-                        fetchedTrips.append(trip)
-                    }
-                    continue
-                }
-                
-                // Process fetched points
-                if !historyPoints.isEmpty {
-                    let coords = historyPoints.map {
-                        Coord(lat: $0.lat, lon: $0.lng)
+                for trip in fleetData {
+                    var polyline: [Coord] = []
+                    for pt in trip.actual_polyline {
+                        polyline.append(Coord(lat: pt.lat, lon: pt.lng))
                     }
                     
-                    let firstPoint = historyPoints.first
-                    let lastPoint = historyPoints.last
-                    var firstTime = "--:--"
-                    var lastTime = "--:--"
-                    
-                    if let firstStr = firstPoint?.timestamp, let firstDate = dateFormatter.date(from: firstStr) {
-                         firstTime = displayFormatter.string(from: firstDate)
+                    var startTimeStr = "--"
+                    if let st = trip.start_time {
+                        if let d = isoFormatter.date(from: st) ?? basicFormatter.date(from: st) {
+                            startTimeStr = displayFormatter.string(from: d)
+                        } else {
+                            // try naive fallback
+                            let parts = st.components(separatedBy: "T")
+                            if parts.count > 1 {
+                                let timeParts = parts[1].components(separatedBy: ":")
+                                if timeParts.count >= 2, let hr = Int(timeParts[0]) {
+                                    let ampm = hr >= 12 ? "PM" : "AM"
+                                    let hr12 = hr > 12 ? hr - 12 : (hr == 0 ? 12 : hr)
+                                    startTimeStr = String(format: "%02d:%@ %@", hr12, timeParts[1], ampm)
+                                }
+                            }
+                        }
                     }
-                    if let lastStr = lastPoint?.timestamp, let lDate = dateFormatter.date(from: lastStr) {
-                         lastTime = displayFormatter.string(from: lDate)
+                    
+                    var endTimeStr = "Ongoing"
+                    if let et = trip.end_time, trip.status == "COMPLETED" {
+                        if let d = isoFormatter.date(from: et) ?? basicFormatter.date(from: et) {
+                            endTimeStr = displayFormatter.string(from: d)
+                        }
                     }
                     
-                    let trip = HistoryTripDisplay(
+                    var historyStops: [HistoryStop] = []
+                    if let fetchedStops = trip.stops {
+                        for fs in fetchedStops {
+                            historyStops.append(HistoryStop(
+                                stopName: fs.stop_name, 
+                                coordinate: Coord(lat: fs.lat, lon: fs.lng),
+                                reachedTime: fs.reached_time
+                            ))
+                        }
+                    }
+                    
+                    // Fallback to BusRepository ID for deep linking
+                    let knownBusId = BusRepository.shared.allBuses.first(where: { $0.vehicleId == trip.trip_id || $0.busId == trip.bus_id })?.id ?? UUID()
+                    
+                    let displayTrip = HistoryTripDisplay(
                         id: UUID(),
-                        busNumber: bus.number,
-                        busId: bus.id,
-                        routeName: "\(bus.route.from) → \(bus.route.to)",
-                        startCity: bus.route.from,
-                        actualPolyline: coords,
-                        isDeviated: false,
-                        status: "COMPLETED",
-                        startTime: firstTime,
-                        endTime: lastTime,
-                        reachedTime: lastTime,
-                        duration: bus.durationText
+                        busNumber: trip.bus_number,
+                        busId: knownBusId,
+                        routeName: trip.route_name,
+                        startCity: trip.start_city,
+                        actualPolyline: polyline,
+                        isDeviated: false, // Could compute from planned vs actual in future
+                        status: trip.status ?? "SCHEDULED",
+                        startTime: startTimeStr,
+                        endTime: endTimeStr,
+                        reachedTime: nil,
+                        duration: trip.status == "COMPLETED" ? "Done" : "Live",
+                        stops: historyStops
                     )
-                    fetchedTrips.append(trip)
+                    fetchedTrips.append(displayTrip)
                 }
-            }
-            
-            await MainActor.run {
-                self.allTrips = fetchedTrips
-                self.isLoading = false
+                
+                await MainActor.run {
+                    self.allTrips = fetchedTrips
+                    self.visibleRoutes = Set(fetchedTrips.map { $0.startCity })
+                    self.isLoading = false
+                }
+            } catch {
+                print("Failed to fetch fleet history:", error)
+                await MainActor.run {
+                    self.isLoading = false
+                }
             }
         }
     }

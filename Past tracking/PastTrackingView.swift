@@ -10,7 +10,7 @@ struct PastTrackingView: View {
                 .font(.title2.bold())
                 .foregroundStyle(theme.current.text)
 
-            DatePicker("Select Date", selection: $vm.selectedDate, displayedComponents: .date)
+            DatePicker("Select Date", selection: $vm.selectedDate, in: ...Date(), displayedComponents: .date)
                 .datePickerStyle(.compact)
                 .foregroundStyle(theme.current.text)
                 .padding(.horizontal, 16)

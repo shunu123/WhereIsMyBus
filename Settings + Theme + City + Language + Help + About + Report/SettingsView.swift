@@ -5,20 +5,22 @@ struct SettingsView: View {
     @EnvironmentObject var router: AppRouter
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var languageManager: LanguageManager
+    @EnvironmentObject var session: SessionManager
     @Environment(\.dismiss) var dismiss
 
-    @State private var enableNotifications = true
-    @State private var arrivalAlerts = true
-    @State private var autoRecenter = false // Screenshot shows off
-    @State private var is24h = false
+    @AppStorage("enableNotifications") private var enableNotifications = true
+    @AppStorage("arrivalAlerts") private var arrivalAlerts = true
+    @AppStorage("autoRecenter") private var autoRecenter = false
+    @AppStorage("is24h") private var is24h = false
+    @AppStorage("alertDistance") private var alertDistance: Int = 1
+    @AppStorage("selectedAlarmSound") private var selectedAlarmSound: String = ""
     
     // For navigation/sheet state
-    @State private var showLanguage = false
     @State private var showTheme = false
     @State private var showCity = false
     
-    @State private var alertDistance: Int = 1
     @State private var showDistanceAlertSheet = false
+    @State private var showAlarmSoundSheet = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,6 +42,7 @@ struct SettingsView: View {
                 Spacer()
             }
             .padding(16)
+            .background(theme.current.background) // Header background
             
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -52,12 +55,6 @@ struct SettingsView: View {
                             .padding(.leading, 16)
                         
                         VStack(spacing: 0) {
-                            settingsRow(icon: "globe", title: languageManager.localizedString("Language"), value: languageManager.currentLanguage) {
-                                showLanguage = true
-                            }
-                            
-                            Divider().padding(.leading, 50)
-                            
                             settingsRow(icon: "mappin.and.ellipse", title: languageManager.localizedString("City"), value: "Chennai (Fixed)") {
                                 // showCity = true // Locked to Chennai
                             }
@@ -93,6 +90,12 @@ struct SettingsView: View {
                             Divider().padding(.leading, 16)
                             
                             toggleRow(title: "Arrival Alerts", isOn: $arrivalAlerts)
+                            
+                            Divider().padding(.leading, 16)
+                            
+                            settingsRow(title: "Alarm Sound", value: selectedAlarmSound.isEmpty ? "Default" : (selectedAlarmSound.components(separatedBy: ".").first?.capitalized ?? "Custom")) {
+                                showAlarmSoundSheet = true
+                            }
                             
                             Divider().padding(.leading, 16)
                             
@@ -158,7 +161,9 @@ struct SettingsView: View {
                             Divider()
                             
                             Button {
-                                // Open iOS Settings
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    UIApplication.shared.open(url)
+                                }
                             } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: "iphone")
@@ -175,36 +180,6 @@ struct SettingsView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                        }
-                        .background(theme.current.background)
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(theme.current.border, lineWidth: 1)
-                        )
-                    }
-                    
-                    // SUPPORT
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("SUPPORT")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(theme.current.accent)
-                            .padding(.leading, 16)
-                        
-                        VStack(spacing: 0) {
-                            settingsRow(icon: "questionmark.circle", title: "Help & FAQ", value: nil) {
-                                router.go(.help)
-                            }
-                            
-                            Divider().padding(.leading, 50)
-                            
-                            settingsRow(icon: "flag", title: "Report Issue", value: nil) {
-                                router.go(.report)
-                            }
-                            
-                            Divider().padding(.leading, 50)
-                            
-                            settingsRow(icon: "envelope", title: "Contact Support", value: nil) {}
                         }
                         .background(theme.current.background)
                         .cornerRadius(12)
@@ -233,15 +208,87 @@ struct SettingsView: View {
                                 .stroke(theme.current.border, lineWidth: 1)
                         )
                     }
+
+                    // ADMINISTRATION (Admin Only)
+                    if SessionManager.shared.userRole == "admin" {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("ADMINISTRATION")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(theme.current.accent)
+                                .padding(.leading, 16)
+                            
+                            VStack(spacing: 0) {
+                                settingsRow(icon: "person.3.sequence.fill", title: "Student Data", value: nil) {
+                                    router.go(.studentData)
+                                }
+                            }
+                            .background(theme.current.card)
+                            .cornerRadius(12)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(theme.current.border, lineWidth: 1)
+                            )
+                        }
+                    }
+
+                    // SUPPORT & FEEDBACK (Student Only)
+                    if SessionManager.shared.userRole != "admin" {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("SUPPORT & FEEDBACK")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(theme.current.accent)
+                                .padding(.leading, 16)
+                            
+                            VStack(spacing: 0) {
+                                settingsRow(icon: "questionmark.circle", title: "Help & FAQ", value: nil) {
+                                    router.go(.help)
+                                }
+                                
+                                Divider().padding(.leading, 50)
+                                
+                                settingsRow(icon: "exclamationmark.bubble", title: "Report Issue", value: nil) {
+                                    router.go(.report)
+                                }
+                            }
+                            .background(theme.current.card)
+                            .cornerRadius(12)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(theme.current.border, lineWidth: 1)
+                            )
+                        }
+                    }
+
+                    // LOGOUT
+                    Button {
+                        session.logout()
+                    } label: {
+                        HStack {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                .font(.title3)
+                                .foregroundStyle(.red)
+                            
+                            Text("Logout")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.red)
+                            
+                            Spacer()
+                        }
+                        .padding(16)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                        )
+                    }
+                    .padding(.top, 8)
                 }
                 .padding(16)
             }
         }
-        .background(theme.current.background.ignoresSafeArea()) // Use theme bg
-        .navigationBarHidden(true) // Use custom header
-        .sheet(isPresented: $showLanguage) {
-            SelectLanguageView()
-        }
+        .background(theme.current.background.ignoresSafeArea())
+        .navigationBarHidden(true)
         .sheet(isPresented: $showTheme) {
             AppThemeView()
         }
@@ -264,6 +311,40 @@ struct SettingsView: View {
                                 .foregroundStyle(theme.current.text)
                             Spacer()
                             if Double(alertDistance) == km {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(theme.current.accent)
+                            }
+                        }
+                        .padding()
+                        .background(theme.current.card)
+                        .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal)
+                
+                Spacer()
+            }
+            .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showAlarmSoundSheet) {
+            VStack(spacing: 20) {
+                Text("Select Alarm Sound")
+                    .font(.headline)
+                    .padding(.top)
+                
+                let sounds = [("Default", ""), ("Chime", "chime.caf"), ("Radar", "radar.caf"), ("Beacon", "beacon.caf")]
+                
+                ForEach(sounds, id: \.1) { (label, file) in
+                    Button {
+                        selectedAlarmSound = file
+                        NotificationManager.shared.selectedSoundName = file
+                        showAlarmSoundSheet = false
+                    } label: {
+                        HStack {
+                            Text(label)
+                                .foregroundStyle(theme.current.text)
+                            Spacer()
+                            if selectedAlarmSound == file {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(theme.current.accent)
                             }

@@ -8,14 +8,16 @@ struct FleetHistoryView: View {
     @State private var showingDatePicker = false
     @State private var showingRouteFilter = false
     @State private var showTripDetails = false
+    @State private var searchText = ""
+    @State private var isSearchVisible = false
     
     // Bottom Sheet State
     @State private var sheetOffset: CGFloat = 0
     @State private var isSheetExpanded = false
     
     @State private var mapRegion: MKCoordinateRegion = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 13.0475, longitude: 80.1167),
-        span: MKCoordinateSpan(latitudeDelta: 0.3, longitudeDelta: 0.3)
+        center: LocationManager.shared.userLocation?.coordinate ?? CLLocationCoordinate2D(latitude: 13.0475, longitude: 80.1167),
+        span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
     )
 
     var body: some View {
@@ -24,6 +26,9 @@ struct FleetHistoryView: View {
                 // 1. Full Screen Map
                 mapView
                     .ignoresSafeArea()
+                
+                // Zoom Controls (Bottom Left)
+                zoomControls
                 
                 // 2. Floating Controls (Top Safe Area)
                 VStack(spacing: 0) {
@@ -51,7 +56,7 @@ struct FleetHistoryView: View {
                 }
             }
         }
-        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showingDatePicker) {
             datePickerSheet
                 .presentationDetents([.medium])
@@ -66,6 +71,12 @@ struct FleetHistoryView: View {
         }
         .onAppear {
             vm.loadHistory(for: vm.selectedDate)
+            
+            // Initial center on user location if history is loading
+            if let userCoord = LocationManager.shared.userLocation?.coordinate {
+                mapRegion = MKCoordinateRegion(center: userCoord, span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))
+            }
+            
             updateMapRegion()
         }
     }
@@ -99,6 +110,42 @@ struct FleetHistoryView: View {
                 center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLon),
                 span: MKCoordinateSpan(latitudeDelta: max(spanLat, 0.05), longitudeDelta: max(spanLon, 0.05))
             )
+        }
+    }
+    private var zoomControls: some View {
+        VStack(spacing: 12) {
+            Button { adjustZoom(factor: 0.5) } label: {
+                Image(systemName: "plus")
+                    .font(.title3.bold())
+                    .foregroundStyle(theme.current.text)
+                    .frame(width: 44, height: 44)
+                    .background(theme.current.card)
+                    .clipShape(Circle())
+                    .shadow(radius: 4)
+            }
+            
+            Button { adjustZoom(factor: 2.0) } label: {
+                Image(systemName: "minus")
+                    .font(.title3.bold())
+                    .foregroundStyle(theme.current.text)
+                    .frame(width: 44, height: 44)
+                    .background(theme.current.card)
+                    .clipShape(Circle())
+                    .shadow(radius: 4)
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.bottom, vm.selectedTrip != nil ? 440 : (partialHeight + 20)) // Adjust for sheet
+        .frame(maxHeight: .infinity, alignment: .bottom)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func adjustZoom(factor: Double) {
+        var newRegion = mapRegion
+        newRegion.span.latitudeDelta *= factor
+        newRegion.span.longitudeDelta *= factor
+        withAnimation(.easeInOut) {
+            mapRegion = newRegion
         }
     }
 
@@ -184,25 +231,23 @@ private extension FleetHistoryView {
     
     // MARK: Top Controls
     var topControls: some View {
-        HStack {
+        HStack(spacing: 12) {
             // Back Button
             Button {
                 router.back()
             } label: {
-                Circle()
-                    .fill(Material.thickMaterial)
-                    .frame(width: 44, height: 44)
+                Image(systemName: "arrow.left")
+                    .font(.title3.bold())
+                    .foregroundStyle(theme.current.text)
+                    .padding(12)
+                    .background(theme.current.card)
+                    .clipShape(Circle())
                     .shadow(color: .black.opacity(0.1), radius: 4)
-                    .overlay(
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(theme.current.text)
-                    )
             }
             
             Spacer()
             
-            // Date Picker Button
+            // Floating Title/Date
             Button {
                 showingDatePicker = true
             } label: {
@@ -213,30 +258,41 @@ private extension FleetHistoryView {
                         .font(.subheadline.bold())
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Material.thickMaterial)
-                .foregroundColor(theme.current.text)
-                .cornerRadius(22)
+                .padding(.vertical, 8)
+                .background(theme.current.card.opacity(0.8))
+                .cornerRadius(20)
                 .shadow(color: .black.opacity(0.1), radius: 4)
+            }
+            
+            Spacer()
+            
+            // Search Button
+            Button {
+                if !isSearchVisible {
+                    withAnimation(.spring()) { isSheetExpanded = true }
+                }
+                withAnimation(.spring()) { isSearchVisible.toggle() }
+            } label: {
+                Image(systemName: isSearchVisible ? "xmark" : "magnifyingglass")
+                    .font(.title3.bold())
+                    .foregroundStyle(theme.current.accent)
+                    .padding(12)
+                    .background(theme.current.card)
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.1), radius: 4)
             }
             
             // Filter Button
             Button {
                 showingRouteFilter = true
             } label: {
-                Circle()
-                    .fill(vm.visibleRoutes.count == vm.groupedRoutes.count ? Material.thickMaterial : Material.regular)
-                    .frame(width: 44, height: 44)
-                    .background(
-                         vm.visibleRoutes.count == vm.groupedRoutes.count ? Color.clear : theme.current.accent
-                    )
-                    .cornerRadius(22)
+                Image(systemName: "slider.horizontal.3")
+                    .font(.title3.bold())
+                    .foregroundStyle(vm.visibleRoutes.count == vm.groupedRoutes.count ? theme.current.accent : .white)
+                    .padding(12)
+                    .background(vm.visibleRoutes.count == vm.groupedRoutes.count ? theme.current.card : theme.current.accent)
+                    .clipShape(Circle())
                     .shadow(color: .black.opacity(0.1), radius: 4)
-                    .overlay(
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(vm.visibleRoutes.count == vm.groupedRoutes.count ? theme.current.text : .white)
-                    )
             }
         }
     }
@@ -271,11 +327,17 @@ private extension FleetHistoryView {
             // Polylines & Buses
             ForEach(Array(vm.filteredTrips.enumerated()), id: \.element.id) { index, trip in
                 let isSelected = vm.selectedTrip?.id == trip.id
+                let routeInfo = vm.groupedRoutes.first(where: { $0.startCity == trip.startCity })
+                let routeColor = routeInfo?.routeColor ?? theme.current.accent
                 
                 ForEach(Array(trip.segments.enumerated()), id: \.element.id) { segIndex, segment in
+                    // Neat Polyline: Draw background stroke for "outline" effect
                     MapPolyline(coordinates: segment.coords.map { $0.cl })
-                        .stroke(segment.isDiverted ? Color.red : theme.current.accent.opacity(isSelected ? 1.0 : 0.6),
-                                style: StrokeStyle(lineWidth: isSelected ? 5 : 3,
+                        .stroke(.white, style: StrokeStyle(lineWidth: isSelected ? 10 : 7, lineCap: .round, lineJoin: .round))
+                    
+                    MapPolyline(coordinates: segment.coords.map { $0.cl })
+                        .stroke(segment.isDiverted ? Color.red : routeColor.opacity(isSelected ? 1.0 : 0.85),
+                                style: StrokeStyle(lineWidth: isSelected ? 7 : 5,
                                                  lineCap: .round, lineJoin: .round))
                 }
                 
@@ -294,7 +356,7 @@ private extension FleetHistoryView {
                             ZStack {
                                 if isSelected {
                                     Circle()
-                                        .fill(theme.current.accent.opacity(0.3))
+                                        .fill(routeColor.opacity(0.3))
                                         .frame(width: 40, height: 40)
                                 }
                                 
@@ -302,10 +364,34 @@ private extension FleetHistoryView {
                                     .font(.caption.bold())
                                     .foregroundColor(.white)
                                     .padding(8)
-                                    .background(Circle().fill(trip.isDeviated ? Color.red : theme.current.accent))
+                                    .background(Circle().fill(trip.isDeviated ? Color.red : routeColor))
                                     .shadow(radius: 3)
                             }
                             .scaleEffect(isSelected ? 1.2 : 1.0)
+                        }
+                    }
+                }
+
+                // Show stop points with names for the selected trip
+                if isSelected {
+                    ForEach(trip.stops) { stop in
+                        if let coord = stop.coordinate {
+                            Annotation(stop.stopName, coordinate: coord.cl) {
+                                VStack(spacing: 4) {
+                                    Text(stop.stopName)
+                                        .font(.system(size: 10, weight: .bold))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(theme.current.card.opacity(0.9))
+                                        .cornerRadius(6)
+                                        .shadow(color: .black.opacity(0.1), radius: 2)
+                                    
+                                    Circle()
+                                        .fill(routeColor)
+                                        .frame(width: 8, height: 8)
+                                        .overlay(Circle().stroke(.white, lineWidth: 2))
+                                }
+                            }
                         }
                     }
                 }
@@ -353,34 +439,85 @@ private extension FleetHistoryView {
             .padding(.horizontal, 24)
             .padding(.bottom, 16)
             
+            if isSearchVisible {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(theme.current.secondaryText)
+                    TextField("Search bus or route...", text: $searchText)
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .foregroundStyle(theme.current.text)
+                    
+                    if !searchText.isEmpty {
+                        Button { searchText = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(theme.current.secondaryText)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(theme.current.background)
+                .cornerRadius(12)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
+            }
+            
             // List
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    if vm.allTrips.isEmpty {
-                        Text("No trips found for this date")
+                    let filteredGroups = vm.filteredGroupedRoutes.filter { group in
+                        if searchText.isEmpty { return true }
+                        return group.startCity.localizedCaseInsensitiveContains(searchText) ||
+                               group.trips.contains { $0.busNumber.localizedCaseInsensitiveContains(searchText) }
+                    }
+
+                    if filteredGroups.isEmpty {
+                        Text("No matching trips found")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .padding(.top, 20)
                     } else {
-                        ForEach(vm.filteredGroupedRoutes) { group in
+                        ForEach(filteredGroups) { group in
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     Circle()
-                                        .fill(theme.current.accent)
+                                        .fill(group.routeColor)
                                         .frame(width: 8, height: 8)
                                     Text(group.startCity)
                                         .font(.headline)
                                         .foregroundColor(theme.current.text)
                                     Spacer()
-                                    Text("\(group.trips.count)")
-                                        .font(.caption.bold())
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Capsule().fill(theme.current.accent))
+                                    
+                                    if !searchText.isEmpty && group.startCity.localizedCaseInsensitiveContains(searchText) {
+                                         Button {
+                                             refreshSearchFor(group.startCity)
+                                         } label: {
+                                             HStack(spacing: 4) {
+                                                 Image(systemName: "magnifyingglass")
+                                                 Text("Search Route")
+                                             }
+                                             .font(.caption.bold())
+                                             .foregroundColor(.white)
+                                             .padding(.horizontal, 8)
+                                             .padding(.vertical, 4)
+                                             .background(Capsule().fill(theme.current.accent))
+                                         }
+                                    } else {
+                                        Text("\(group.trips.count)")
+                                            .font(.caption.bold())
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Capsule().fill(group.routeColor))
+                                    }
                                 }
                                 
-                                ForEach(group.trips) { trip in
+                                let filteredTrips = group.trips.filter { trip in
+                                    if searchText.isEmpty { return true }
+                                    return trip.busNumber.localizedCaseInsensitiveContains(searchText) ||
+                                           group.startCity.localizedCaseInsensitiveContains(searchText)
+                                }
+
+                                ForEach(filteredTrips) { trip in
                                     Button {
                                         withAnimation {
                                             vm.selectedTrip = trip
@@ -571,6 +708,15 @@ private extension FleetHistoryView {
                     timelineEvents: timelineEvents
                 ))
             }
+        }
+    }
+
+    func refreshSearchFor(_ city: String) {
+        // Trigger a focused search for this city/route
+        withAnimation {
+            searchText = city
+            isSearchVisible = true
+            isSheetExpanded = true
         }
     }
 

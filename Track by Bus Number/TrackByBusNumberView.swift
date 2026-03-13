@@ -62,7 +62,7 @@ struct TrackByBusNumberView: View {
                     Task {
                         errorText = nil
                         if let bus = BusSearchService.shared.findByNumber(busNo) {
-                            router.go(.busSchedule(busID: bus.id))
+                            router.go(.busSchedule(busID: bus.id.uuidString))
                         } else {
                             errorText = "Bus not found."
                         }

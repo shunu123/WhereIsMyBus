@@ -1,4 +1,6 @@
 import SwiftUI
+import CoreLocation
+
 
 struct HomeView: View {
     @EnvironmentObject var theme: ThemeManager
@@ -11,6 +13,11 @@ struct HomeView: View {
 
     @StateObject private var vm: HomeViewModel
     @State private var showingManualSearch = false
+    
+    enum Field {
+        case from, to
+    }
+    @FocusState private var focusedField: Field?
 
     init(openDrawer: @escaping () -> Void, locationManager: LocationManager) {
         self.openDrawer = openDrawer
@@ -18,7 +25,7 @@ struct HomeView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) { // Algn to bottom for bottom nav
+        ZStack(alignment: .top) {
             theme.current.background
                 .ignoresSafeArea()
 
@@ -26,25 +33,54 @@ struct HomeView: View {
                 // Top Header (Squared Green)
                 header
                 
+                // Fixed Search Card (No longer scrolls away)
+                mainSearchCard
+                    .padding(.top, 10)
+                
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 12) {
-                        // Main Search Card (From/To)
-                        mainSearchCard
+                    VStack(spacing: 24) {
+                        if SessionManager.shared.userRole == "student" {
+                            studentDashboardCard
+                                .padding(.horizontal, 20)
+                                .padding(.top, 10)
+                        }
                         
-                        // Secondary Search Actions
-                        secondarySearchActions
+                        // 1. Recent Buses (Priority)
+                        recentBusesSection
+                            .padding(.top, 10)
+                            .padding(.horizontal, 20)
                         
-                        // Search History Section
-                        searchHistorySection
-
-                        Spacer(minLength: 100)
+                        // 2. Recent Route Searches (Secondary)
+                        recentRoutesSection
+                            .padding(.horizontal, 20)
+                        
+                        // Track by Bus Number bar
+                        trackByNumberBar
+                            .padding(.horizontal, 20)
+                        
+                        if vm.isHistoryMode && SessionManager.shared.userRole == "admin" {
+                            // History Date Selection
+                            DatePicker("Select Date", selection: $vm.historyDate, in: ...Date(), displayedComponents: .date)
+                                .datePickerStyle(.compact)
+                                .labelsHidden()
+                                .padding()
+                                .background(theme.current.card)
+                                .cornerRadius(12)
+                                .padding(.horizontal, 20)
+                        }
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.bottom, SessionManager.shared.userRole == "admin" ? 60 : 20) // Buffer for bottom bar
                 }
             }
             
-            // Bottom Bar
-            bottomBar
+            // Persistent Bottom Bar for Admins
+            if SessionManager.shared.userRole == "admin" {
+                VStack {
+                    Spacer()
+                    bottomPinnedBar
+                }
+                .ignoresSafeArea(.keyboard)
+            }
             
             // Permission Overlay
             if vm.showPermissions {
@@ -64,43 +100,59 @@ struct HomeView: View {
         .onAppear {
             vm.router = router
             vm.checkPermissions()
+            vm.loadRecentSearches()
             SessionManager.shared.resetIdleTimer()
+            
+            // Dynamic Header Logic
+            vm.prepareDynamicHeader()
+            // Wait 5 seconds, then slowly transition
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                withAnimation(.easeInOut(duration: 1.5)) {
+                    vm.showDynamicHeader = false
+                }
+            }
         }
         .onTapGesture {
             SessionManager.shared.resetIdleTimer()
         }
         .ignoresSafeArea(.all, edges: .top)
-        .navigationBarHidden(true)
+
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showingManualSearch) {
             manualSearchSheet
         }
     }
+
+
 }
 
 // MARK: - Manual Search Sheet
 private extension HomeView {
-    var manualSearchSheet: some View {
-        VStack(spacing: 20) {
-            HStack {
-                Text(vm.isHistoryMode ? "Search History" : "Search Bus Number")
-                    .font(.title2.bold())
-                Spacer()
-                Button {
-                    showingManualSearch = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(theme.current.secondaryText)
-                }
+    var manualSearchSheetHeader: some View {
+        HStack {
+            Text(vm.isHistoryMode ? "Search History" : "Search Bus Number")
+                .font(.title2.bold())
+            Spacer()
+            Button {
+                showingManualSearch = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(theme.current.secondaryText)
             }
-            
-            Toggle("Search in History", isOn: $vm.isHistoryMode)
-                .font(.subheadline.bold())
-                .tint(theme.current.accent)
-                .padding(.vertical, 4)
+        }
+    }
 
-            if vm.isHistoryMode {
+    var manualSearchSheetOptions: some View {
+        Group {
+            if SessionManager.shared.userRole == "admin" {
+                Toggle("Search in History", isOn: $vm.isHistoryMode)
+                    .font(.subheadline.bold())
+                    .tint(theme.current.accent)
+                    .padding(.vertical, 4)
+            }
+
+            if vm.isHistoryMode && SessionManager.shared.userRole == "admin" {
                 DatePicker("Select Date", selection: $vm.historyDate, displayedComponents: .date)
                     .datePickerStyle(.compact)
                     .labelsHidden()
@@ -113,75 +165,140 @@ private extension HomeView {
                     .foregroundStyle(theme.current.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
 
-            HStack {
-                Image(systemName: "bus.fill")
-                    .foregroundStyle(theme.current.accent)
-                TextField("e.g. 500-D, 335-E", text: $vm.busNumberSearch)
-                    .font(.title3.bold())
-                    .textFieldStyle(.plain)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.characters)
-            }
-            .padding()
-            .background(theme.current.card)
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(theme.current.border, lineWidth: 1)
-            )
-
-            Button {
-                if !vm.busNumberSearch.isEmpty {
-                    showingManualSearch = false
-                    let allBuses = BusRepository.shared.allBuses
-                    guard let bus = allBuses.first(where: { $0.number.contains(vm.busNumberSearch.uppercased()) }) ?? allBuses.first else { return }
-                    
-                    if vm.isHistoryMode {
-                        router.go(.liveTracking(busID: bus.id, isHistorical: true, date: vm.historyDate))
-                    } else {
-                        router.go(.busSchedule(busID: bus.id))
-                    }
+    var manualSearchSheetInput: some View {
+        HStack {
+            Image(systemName: "bus.fill")
+                .foregroundStyle(theme.current.accent)
+            TextField("e.g. 500-D, 335-E", text: $vm.busNumberSearch)
+                .font(.title3.bold())
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.characters)
+            
+            if !vm.busNumberSearch.isEmpty {
+                Button { vm.busNumberSearch = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(theme.current.secondaryText)
                 }
-            } label: {
-                Text(vm.isHistoryMode ? "View Historical Data" : "Track Bus")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(theme.current.accent)
-                    .cornerRadius(12)
             }
-            .disabled(vm.busNumberSearch.isEmpty)
-            .opacity(vm.busNumberSearch.isEmpty ? 0.6 : 1.0)
+        }
+        .padding()
+        .background(theme.current.card)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(theme.current.border, lineWidth: 1)
+        )
+    }
 
+    private func handleManualSearch() {
+        let search = vm.busNumberSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        
+        let allBuses = BusRepository.shared.allBuses
+        
+        // 1. Exact match in repository
+        if let bus = allBuses.first(where: { 
+            $0.number.lowercased() == search || 
+            $0.extTripId?.lowercased() == search ||
+            "\($0.busId ?? -1)" == search || 
+            "\($0.vehicleId ?? -1)" == search 
+        }) {
+            BusSearchHistoryService.shared.save(bus.number)
+            vm.loadRecentSearches()
+            router.go(.busSchedule(busID: bus.id.uuidString, searchPoint: nil, destinationStop: nil))
+            showingManualSearch = false
+            return
+        }
+        
+        // 2. Fuzzy match in repository
+        if let fuzzyBus = allBuses.first(where: {
+            $0.number.lowercased().contains(search) ||
+            ($0.extTripId?.lowercased().contains(search) ?? false) ||
+            ($0.statusDetail?.lowercased().contains(search) ?? false)
+        }) {
+            BusSearchHistoryService.shared.save(fuzzyBus.number)
+            vm.loadRecentSearches()
+            router.go(.busSchedule(busID: fuzzyBus.id.uuidString, searchPoint: nil, destinationStop: nil))
+            showingManualSearch = false
+            return
+        }
+        
+        // 3. Fallback: Treat as a Route ID
+        let routeNum = search.uppercased()
+        BusSearchHistoryService.shared.save(routeNum)
+        vm.loadRecentSearches()
+        router.go(.availableBuses(from: "Route \(routeNum)", to: "Destination", fromLat: nil, fromLon: nil, toLat: nil, toLon: nil, via: routeNum))
+        showingManualSearch = false
+    }
+
+    var manualSearchSheetAction: some View {
+        Button(action: handleManualSearch) {
+            Text("Track Bus")
+                .font(.headline.bold())
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 54)
+                .background(vm.busNumberSearch.isEmpty ? Color.gray : theme.current.accent)
+                .cornerRadius(12)
+        }
+        .disabled(vm.busNumberSearch.isEmpty)
+        .opacity(vm.busNumberSearch.isEmpty ? 0.6 : 1.0)
+    }
+
+    var manualSearchSheet: some View {
+        VStack(spacing: 20) {
+            manualSearchSheetHeader
+            manualSearchSheetOptions
+            manualSearchSheetInput
+            manualSearchSheetAction
             Spacer()
         }
         .padding(24)
         .background(theme.current.background)
-        .presentationDetents([.height(vm.isHistoryMode ? 450 : 350)])
+        .presentationDetents([.height(vm.isHistoryMode && SessionManager.shared.userRole == "admin" ? 450 : 350)])
     }
 }
 
 // MARK: - Header
 private extension HomeView {
     var header: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
+            // Header Background covering safe area
             LinearGradient(colors: theme.current.primaryGradient, startPoint: .top, endPoint: .bottom)
-                .frame(height: 60) // Safe Area cover
-                .ignoresSafeArea()
+                .ignoresSafeArea(edges: .top)
             
+            // Content
             ZStack {
-                // Centered Title or Voice Wave
-                if vm.voice.isListening {
-                    VoiceWaveView(level: vm.voice.audioLevel)
-                        .frame(height: 40)
-                } else {
-                    Text("Where Is My Bus?")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
+                // Centered Title or Voice Wave or Greeting
+                Group {
+                    if vm.voice.isListening {
+                        VoiceWaveView(level: vm.voice.audioLevel)
+                            .frame(height: 40)
+                            .transition(.opacity)
+                    } else {
+                        VStack(spacing: 2) {
+                            Text("Where Is My Bus?")
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                            
+                            HStack(spacing: 4) {
+                                Image(systemName: "mappin.circle.fill")
+                                    .font(.caption)
+                                Text(locationManager.currentAddress)
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                            }
+                            .foregroundStyle(.white.opacity(0.9))
+                        }
+                        .transition(.opacity)
+                        .animation(.easeInOut, value: locationManager.currentAddress)
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                .animation(.easeInOut(duration: 1.5), value: vm.showDynamicHeader)
+                .animation(.easeInOut(duration: 0.5), value: vm.voice.isListening)
 
                 // Left Action (Drawer)
                 HStack {
@@ -195,22 +312,9 @@ private extension HomeView {
                     Spacer()
                 }
 
-                // Right Actions (Track + Mic)
+                // Right Actions (Mic only)
                 HStack(spacing: 12) {
                     Spacer()
-                    
-                    /* Removing Bus Icon as per requirement
-                    Button {
-                         router.go(.trackByNumber(autoStartVoice: false))
-                    } label: {
-                        Image(systemName: "bus.fill")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .padding(8)
-                            .background(Color.white.opacity(0.2))
-                            .clipShape(Circle())
-                    }
-                    */
                     
                     // Voice Mic
                     Button {
@@ -236,26 +340,36 @@ private extension HomeView {
             }
             .padding(.horizontal, 16)
             .frame(height: 60)
-            .background(LinearGradient(colors: theme.current.primaryGradient, startPoint: .top, endPoint: .bottom))
         }
+        .frame(height: 110) // Unified height including safe area
     }
 }
 
 struct VoiceWaveView: View {
-    @EnvironmentObject var theme: ThemeManager
     var level: Float
     
     var body: some View {
-        HStack(spacing: 5) {
-            ForEach(0..<24) { i in
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color.white)
-                    .frame(width: 4, height: max(10, CGFloat(level * 80 * Float.random(in: 0.7...2.0))))
-                    .animation(.spring(response: 0.15, dampingFraction: 0.5), value: level)
+        HStack(spacing: 4) {
+            ForEach(0..<15, id: \.self) { i in
+                // Slippery wave effect with overlapping sine waves
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(.white)
+                    .frame(width: 3, height: calculateHeight(for: i))
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: level)
             }
         }
-        .frame(height: 80)
-        .padding(.vertical, 10)
+    }
+    
+    private func calculateHeight(for index: Int) -> CGFloat {
+        let baseHeight: CGFloat = 8
+        let intensity = CGFloat(level) * 100
+        let time = Date().timeIntervalSince1970
+        
+        // Overlapping sine waves for a "slippery" feel
+        let wave1 = sin(time * 5 + Double(index) * 0.4) * intensity * 0.5
+        let wave2 = cos(time * 3 + Double(index) * 0.7) * intensity * 0.3
+        
+        return max(baseHeight, baseHeight + wave1 + wave2)
     }
 }
 
@@ -263,112 +377,273 @@ struct VoiceWaveView: View {
 private extension HomeView {
     var mainSearchCard: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 16) {
-                // Vertical Line + Circles + Bus Logo
-                VStack(spacing: 0) {
-                    Circle()
-                        .fill(theme.current.accent)
-                        .frame(width: 12, height: 12)
-                    
-                    // Connecting line with Bus Logo
-                    Rectangle()
-                        .fill(theme.current.border)
-                        .frame(width: 2, height: 25)
-                        .overlay(
-                            Image(systemName: "bus.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(theme.current.accent)
-                                .background(Circle().fill(theme.current.background).frame(width: 20, height: 20))
-                        )
-                    
-                    Rectangle()
-                        .fill(theme.current.border)
-                        .frame(width: 2, height: 25)
-                    
-                    Image(systemName: "mappin.and.ellipse")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.red)
-                        .frame(width: 12, height: 12)
-                }
-                .padding(.leading, 12)
-
-                VStack(spacing: 0) {
-                    // Same text field UI for both modes, just different suggestion sources
-                    trainStyleInputField(
-                        placeholder: "From (e.g. Chennai)",
-                        text: $vm.fromText,
-                        onTextChange: vm.updateFromSuggestions
-                    )
-                    .frame(height: 50)
-                    
-                    Divider()
-                    
-                    trainStyleInputField(
-                        placeholder: "To (e.g. Saveetha)",
-                        text: $vm.toText,
-                        onTextChange: vm.updateToSuggestions
-                    )
-                    .frame(height: 50)
-                }
-                
-                // Swap Button
-                Button {
-                    vm.swap()
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down.circle.fill")
-                    
-                        .font(.title)
-                        .foregroundStyle(theme.current.accent)
-                        .background(Circle().fill(theme.current.card))
-                }
-                .padding(.trailing, 20)
-            }
-            .padding(.top, 16)
-            
-            // Integrated Find Button
-            Button {
-                router.go(.availableBuses(from: vm.fromText, to: vm.toText, via: nil))
-                SearchHistoryService.shared.save(from: vm.fromText, to: vm.toText)
-            } label: {
-                Text(languageManager.localizedString("Search buses"))
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(LinearGradient(colors: theme.current.primaryGradient, startPoint: .leading, endPoint: .trailing))
-                    .cornerRadius(8)
-                    .padding(16)
-            }
+            searchCardHeader
+            searchButton
+            browseAllRoutesButton
         }
-        .background(theme.current.background)
-        .cornerRadius(12)
+        .background(theme.current.card)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 16)
                 .stroke(theme.current.border, lineWidth: 1)
         )
-        .overlay(alignment: .topLeading) {
-            // Suggestions overlay for both modes
-            VStack(spacing: 0) {
-                // Suggestions List for FROM
-                if !vm.fromSuggestions.isEmpty {
-                    suggestionList(suggestions: vm.fromSuggestions) { suggestion in
-                        vm.selectFrom(suggestion)
-                    }
-                    .padding(.top, 70) // Position below the From field
-                }
+        .background(
+            RoundedRectangle(cornerRadius: 28)
+                .fill(theme.current.card)
+                .background(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 28)
+                .stroke(.white.opacity(0.2), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 25, x: 0, y: 15)
+        .padding(.horizontal, 16)
+        .zIndex(100)
+        .overlay {
+            suggestionsDimmedBackground
+        }
+        .overlay(alignment: .top) {
+            suggestionsOverlay
+        }
+    }
 
-                // Suggestions List for TO
-                if !vm.toSuggestions.isEmpty {
-                    suggestionList(suggestions: vm.toSuggestions) { suggestion in
-                        vm.selectTo(suggestion)
+    private var searchCardHeader: some View {
+        HStack(spacing: 12) {
+            // Vertical Progress Line
+            VStack(spacing: 0) {
+                Circle()
+                    .fill(theme.current.accent)
+                    .frame(width: 8, height: 8)
+                
+                Rectangle()
+                    .fill(LinearGradient(colors: [theme.current.accent, theme.current.border], startPoint: .top, endPoint: .bottom))
+                    .frame(width: 2, height: 60)
+                
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(theme.current.accent)
+            }
+            .padding(.vertical, 8)
+            
+            searchTextFields
+            
+            // Swap Button
+            Button {
+                withAnimation(.spring()) { vm.swap() }
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(theme.current.accent)
+                    .padding(12)
+                    .background(theme.current.accent.opacity(0.1))
+                    .clipShape(Circle())
+            }
+        }
+        .padding(20)
+    }
+
+    private var searchButton: some View {
+        Button(action: handleSearch) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .font(.headline)
+                Text("Find Buses")
+                    .font(.headline)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(theme.current.accent)
+            .foregroundStyle(.white)
+        }
+        .cornerRadius(16)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+    }
+
+    private var browseAllRoutesButton: some View {
+        Button {
+            router.go(.allRoutes)
+        } label: {
+            HStack {
+                Image(systemName: "list.bullet.rectangle.portrait")
+                Text("BROWSE ALL ROUTES")
+                    .font(.subheadline.bold())
+            }
+            .foregroundStyle(theme.current.accent)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(theme.current.accent.opacity(0.1))
+            .cornerRadius(12)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
+    }
+
+    @ViewBuilder
+    private var suggestionsDimmedBackground: some View {
+        if (!vm.fromSuggestions.isEmpty && focusedField == .from) || (!vm.toSuggestions.isEmpty && focusedField == .to) {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation {
+                        focusedField = nil
                     }
-                    .padding(.top, vm.fromSuggestions.isEmpty ? 120 : 0) // Position below the To field
+                }
+                .transition(.opacity)
+                .zIndex(90)
+        }
+    }
+
+    @ViewBuilder
+    private var suggestionsOverlay: some View {
+        if (!vm.fromSuggestions.isEmpty && focusedField == .from) || (!vm.toSuggestions.isEmpty && focusedField == .to) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    if !vm.fromSuggestions.isEmpty && focusedField == .from {
+                        suggestionList(suggestions: vm.fromSuggestions) { stop in
+                            vm.selectFrom(stop)
+                            focusedField = nil
+                        }
+                    } else if !vm.toSuggestions.isEmpty && focusedField == .to {
+                        suggestionList(suggestions: vm.toSuggestions) { stop in
+                            vm.selectTo(stop)
+                            focusedField = nil
+                        }
+                    }
                 }
             }
-            .padding(.leading, 12) // Start at the same leading as the icons
-            .zIndex(100)
+            .frame(maxHeight: 250)
+            .background(Color(uiColor: .systemBackground))
+            .cornerRadius(12)
+            .padding(.top, 160)
+            .padding(.horizontal, 16)
+            .shadow(color: Color.black.opacity(0.15), radius: 15, x: 0, y: 8)
+            .zIndex(500)
         }
-        .padding(.top, 12)
+    }
+    
+    @ViewBuilder
+    private var searchTextFields: some View {
+        VStack(spacing: 12) {
+            HStack {
+                TextField("Starting From...", text: $vm.fromText)
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .focused($focusedField, equals: .from)
+                    .onChange(of: vm.fromText) { _, _ in
+                        if focusedField == .from {
+                            vm.fromID = nil
+                            vm.updateFromSuggestions()
+                        }
+                    }
+                
+                if !vm.fromText.isEmpty {
+                    Button { vm.fromText = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(theme.current.secondaryText)
+                    }
+                }
+            }
+            .padding(12)
+            .background(theme.current.background.opacity(0.5))
+            .cornerRadius(12)
+            
+            HStack {
+                TextField("Destination To...", text: $vm.toText)
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .focused($focusedField, equals: .to)
+                    .onChange(of: vm.toText) { _, _ in
+                        if focusedField == .to {
+                            vm.toID = nil
+                            vm.updateToSuggestions()
+                        }
+                    }
+                
+                if !vm.toText.isEmpty {
+                    Button { vm.toText = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(theme.current.secondaryText)
+                    }
+                }
+            }
+            .padding(12)
+            .background(theme.current.background.opacity(0.5))
+            .cornerRadius(12)
+        }
+    }
+    
+    private func handleSearch() {
+        guard !vm.fromText.isEmpty, !vm.toText.isEmpty else { return }
+        // Save history locally
+        SearchHistoryService.shared.save(from: vm.fromText, to: vm.toText)
+        
+        // Save history to backend
+        let fid = vm.fromID ?? ""
+        let tid = vm.toID ?? ""
+        let fn = vm.fromText
+        let tn = vm.toText
+        let uid = SessionManager.shared.currentUser?.id
+        
+        let fLat = vm.fromStop?.lat
+        let fLon = vm.fromStop?.lng
+        let tLat = vm.toStop?.lat
+        let tLon = vm.toStop?.lng
+        
+        Task {
+            try? await APIService.shared.saveRecentSearch(
+                fromStopId: fid.isEmpty ? "unknown" : fid,
+                toStopId: tid.isEmpty ? "unknown" : tid,
+                fromName: fn,
+                toName: tn,
+                userId: uid
+            )
+        }
+        
+        router.go(.availableBuses(
+            from: fn,
+            to: tn,
+            fromID: fid,
+            toID: tid,
+            fromLat: fLat,
+            fromLon: fLon,
+            toLat: tLat,
+            toLon: tLon,
+            via: nil
+        ))
+    }
+    
+    var trackByNumberBar: some View {
+        Button {
+            showingManualSearch = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "number.square.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(theme.current.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Track by Bus Number")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(theme.current.text)
+                    Text("Enter exact number like 500-D")
+                        .font(.caption)
+                        .foregroundStyle(theme.current.secondaryText)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(theme.current.secondaryText)
+            }
+            .padding(12)
+            .background(theme.current.card)
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
+        }
     }
     
     func trainStyleInputField(placeholder: String, text: Binding<String>, onTextChange: @escaping () -> Void) -> some View {
@@ -398,12 +673,7 @@ private extension HomeView {
             secondarySearchRow(icon: "bus.fill", title: "Bus No. / Bus Name", text: $vm.busNumberSearch) {
                 let allBuses = BusRepository.shared.allBuses
                 guard let bus = allBuses.first(where: { $0.number.contains(vm.busNumberSearch) || $0.headsign.contains(vm.busNumberSearch) }) ?? allBuses.first else { return }
-                router.go(.busSchedule(busID: bus.id))
-            }
-            
-            secondarySearchRow(icon: "dot.radiowaves.right", title: "Bus Stop departure board", text: $vm.stopSearchText) {
-                // Show buses for a specific stop
-                router.go(.busesAtStop(stopName: vm.stopSearchText))
+                router.go(.busSchedule(busID: bus.id.uuidString))
             }
         }
     }
@@ -440,18 +710,18 @@ private extension HomeView {
         )
     }
 
-    func suggestionList(suggestions: [String], onSelect: @escaping (String) -> Void) -> some View {
+    func suggestionList(suggestions: [BusStop], onSelect: @escaping (BusStop) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(suggestions, id: \.self) { suggestion in
+            ForEach(suggestions) { stop in
                 Button {
-                    onSelect(suggestion)
+                    onSelect(stop)
                 } label: {
                     HStack(spacing: 16) {
                         Image(systemName: "mappin.circle.fill")
                             .foregroundStyle(theme.current.accent)
                             .frame(width: 20) // Match icon column width
                         
-                        Text(suggestion)
+                        Text(stop.name)
                             .font(.system(size: 16, weight: .medium, design: .rounded))
                             .foregroundStyle(theme.current.text)
                         Spacer()
@@ -460,45 +730,111 @@ private extension HomeView {
                     .frame(height: 50)
                     .background(theme.current.card)
                 }
-                if suggestion != suggestions.last {
+                if stop.id != suggestions.last?.id {
                     Divider().padding(.leading, 52) // Aligned with text
                 }
             }
         }
-        .background(theme.current.background)
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.1), radius: 15, x: 0, y: 8)
-        .padding(.trailing, 24)
     }
 
-    var searchHistorySection: some View {
-        let allBuses = BusRepository.shared.allBuses
-        return VStack(alignment: .leading, spacing: 0) {
-            Text("RECENT BUSES")
-                .font(.caption.bold())
-                .foregroundStyle(theme.current.secondaryText)
-                .padding(.leading, 8)
-                .padding(.bottom, 8)
+    private func handleRecentBusSelection(_ number: String) {
+        vm.busNumberSearch = number
+        if let bus = BusRepository.shared.allBuses.first(where: { $0.number.lowercased() == number.lowercased() }) {
+            router.go(.busSchedule(busID: bus.id.uuidString, searchPoint: nil, destinationStop: nil))
+        }
+    }
 
-            if allBuses.isEmpty {
-                Text("No buses available")
-                    .font(.subheadline)
+    var studentDashboardCard: some View {
+        Button {
+            router.go(.studentDashboard)
+        } label: {
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("FIND NEAREST STOP")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(theme.current.accent)
+                    Text("Student Dashboard")
+                        .font(.title3.bold())
+                        .foregroundStyle(theme.current.text)
+                    Text("Locate the closest bus stop and see walking directions.")
+                        .font(.caption)
+                        .foregroundStyle(theme.current.secondaryText)
+                        .multilineTextAlignment(.leading)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "location.magnifyingglass")
+                    .font(.system(size: 30))
+                    .foregroundStyle(theme.current.accent)
+            }
+            .padding(20)
+            .background(theme.current.card)
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(theme.current.border, lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
+        }
+    }
+
+    var recentBusesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !vm.recentBusNumbers.isEmpty {
+                Text("RECENT BUSES")
+                    .font(.caption.bold())
                     .foregroundStyle(theme.current.secondaryText)
-                    .padding(16)
-            } else {
+                    .padding(.leading, 8)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(vm.recentBusNumbers, id: \.self) { number in
+                            Button {
+                                handleRecentBusSelection(number)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "bus")
+                                        .font(.system(size: 14, weight: .bold))
+                                    Text(number)
+                                        .font(.system(size: 15, weight: .bold))
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(theme.current.card)
+                                .cornerRadius(20)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 20)
+                                        .stroke(theme.current.border, lineWidth: 1)
+                                )
+                                .foregroundStyle(theme.current.text)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    var recentRoutesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !vm.recentSearches.isEmpty {
+                Text("RECENT ROUTES")
+                    .font(.caption.bold())
+                    .foregroundStyle(theme.current.secondaryText)
+                    .padding(.leading, 8)
+                    .padding(.bottom, 8)
+                
                 VStack(spacing: 0) {
-                    ForEach(Array(allBuses.prefix(5).enumerated()), id: \.element.id) { idx, bus in
-                        if idx > 0 { Divider() }
-                        historyRow(
-                            busNo: bus.number,
-                            name: bus.headsign,
-                            route: "\(bus.route.from.prefix(3).uppercased()) - \(bus.route.to.prefix(3).uppercased())"
-                        ) {
-                            router.go(.busSchedule(busID: bus.id))
+                    ForEach(vm.recentSearches) { search in
+                        recentSearchRow(search)
+                        if search.id != vm.recentSearches.last?.id {
+                            Divider()
                         }
                     }
                 }
-                .background(theme.current.background)
+                .background(theme.current.card) // Explicitly card color
                 .cornerRadius(12)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
@@ -506,27 +842,28 @@ private extension HomeView {
                 )
             }
         }
-        .padding(.top, 16)
     }
 
-    func historyRow(busNo: String, name: String, route: String, action: @escaping () -> Void) -> some View {
+    private func recentSearchRow(_ search: RecentSearch) -> some View {
         Button {
-            action()
+            vm.useRecentSearch(search)
         } label: {
-            HStack {
-                Text(busNo)
+            HStack(spacing: 12) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundStyle(theme.current.accent)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(search.from_name)
+                        Image(systemName: "arrow.right")
+                            .font(.caption)
+                        Text(search.to_name)
+                    }
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(theme.current.text)
-                
-                Text(name)
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundStyle(theme.current.secondaryText)
+                }
                 
                 Spacer()
-                
-                Text(route)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(theme.current.secondaryText)
                 
                 Image(systemName: "chevron.right")
                     .font(.caption.bold())
@@ -534,62 +871,55 @@ private extension HomeView {
             }
             .padding(16)
         }
-        .buttonStyle(.plain)
+    }
+
+
+
+    var bottomPinnedBar: some View {
+        HStack(spacing: 0) {
+            // Bus/Home Tab
+            Button {
+                showingManualSearch = true
+            } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: "bus.fill")
+                        .font(.system(size: 20))
+                    Text("Home")
+                        .font(.caption2.weight(.medium))
+                }
+                .frame(maxWidth: .infinity)
+                .foregroundStyle(theme.current.accent)
+            }
+            
+            // Fleet Activity Button (Only for Admins)
+            if SessionManager.shared.userRole == "admin" {
+                Button {
+                    router.go(.activeFleet)
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "map.fill")
+                            .font(.system(size: 20))
+                        Text("Fleet Activity")
+                            .font(.caption2.weight(.medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .foregroundStyle(theme.current.secondaryText)
+                }
+            }
+        }
+        .padding(.vertical, 12)
+        .background(theme.current.card.opacity(0.95))
+        .overlay(
+            Rectangle()
+                .fill(theme.current.border)
+                .frame(height: 1),
+            alignment: .top
+        )
     }
 
     private func navigate(toBus busNo: String) {
         let allBuses = BusRepository.shared.allBuses
-        guard let bus = allBuses.first(where: { $0.number.contains(busNo) }) ?? allBuses.first else { return }
-        router.go(.busSchedule(busID: bus.id))
-    }
-    
-
-
-    var bottomBar: some View {
-        HStack {
-            Spacer()
-            
-            // Search Button
-            Button {
-                showingManualSearch = true
-            } label: {
-                bottomBarItem(
-                    icon: "magnifyingglass",
-                    title: "SEARCH",
-                    isSelected: !vm.isFleetHistoryMode
-                )
-            }
-            
-            Spacer()
-            
-            // History Button (New Fleet History Icon)
-            Button {
-                router.go(.fleetHistory)
-            } label: {
-                bottomBarItem(
-                    icon: "clock.arrow.circlepath",
-                    title: "HISTORY",
-                    isSelected: false 
-                )
-            }
-            
-            Spacer()
-        }
-        .padding(.horizontal, 40)
-        .padding(.top, 12)
-        .padding(.bottom, 34)
-        .background(theme.current.card)
-        .cornerRadius(30, corners: [.topLeft, .topRight])
-        .shadow(color: Color.black.opacity(0.05), radius: 10, y: -5)
-    }
-
-    func bottomBarItem(icon: String, title: String, isSelected: Bool) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.title2)
-            Text(title)
-                .font(.caption2.bold())
-        }
-        .foregroundStyle(isSelected ? theme.current.accent : theme.current.secondaryText)
+        guard let bus = allBuses.first(where: { $0.number.contains(busNo.uppercased()) }) ?? allBuses.first else { return }
+        router.go(.busSchedule(busID: bus.id.uuidString))
     }
 }

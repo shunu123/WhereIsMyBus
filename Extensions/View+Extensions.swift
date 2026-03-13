@@ -23,3 +23,16 @@ struct RoundedCorner: Shape {
         return Path(path.cgPath)
     }
 }
+
+// MARK: - Custom Font Applier
+
+extension View {
+    @ViewBuilder
+    func applyCustomAppTheme(_ theme: ThemeManager) -> some View {
+        if !theme.customFontName.isEmpty {
+            self.environment(\.font, Font.custom(theme.customFontName, size: 16, relativeTo: .body))
+        } else {
+            self
+        }
+    }
+}

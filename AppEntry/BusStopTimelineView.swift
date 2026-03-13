@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct BusStopTimelineView: View {
-    @EnvironmentObject var theme: ThemeManager
     let stops: [String]
     let currentStopIndex: Int
 
@@ -23,18 +22,18 @@ struct BusStopTimelineView: View {
                         HStack(alignment: .top, spacing: 15) {
                             VStack(spacing: 0) {
                                 Circle()
-                                    .fill(index <= currentStopIndex ? theme.current.accent : Color.gray)
+                                    .fill(index <= currentStopIndex ? .accentColor : Color.gray)
                                     .frame(width: 10, height: 10)
                                 if index != stops.count - 1 {
                                     Rectangle()
-                                        .fill(index < currentStopIndex ? theme.current.accent : Color.gray)
+                                        .fill(index < currentStopIndex ? .accentColor : Color.gray)
                                         .frame(width: 2, height: 30)
                                 }
                             }
                             
                             Text(stops[index])
                                 .font(.system(size: 14))
-                                .foregroundStyle(index <= currentStopIndex ? theme.current.text : .secondary)
+                                .foregroundStyle(index <= currentStopIndex ? .primary : .secondary)
                             
                             Spacer()
                             

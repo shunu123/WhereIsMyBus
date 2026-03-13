@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>We need your location to track the bus and transmit live GPS updates to other users.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>We need your location to track the bus and transmit live GPS updates to other users.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>We need speech recognition to allow you to search for buses using your voice.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>We need microphone access to listen to your voice commands for bus tracking.</string>
+</dict>
+</plist>

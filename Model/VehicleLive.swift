@@ -1,6 +1,6 @@
 import Foundation
 
-struct VehicleLive: Codable, Identifiable {
+struct VehicleLive: Codable, Identifiable, Sendable {
     var id: String { vehicleNumber ?? UUID().uuidString }
     let vehicleNumber: String?
     let latitude: Double?

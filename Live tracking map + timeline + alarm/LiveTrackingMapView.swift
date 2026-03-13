@@ -18,13 +18,12 @@ struct LiveTrackingMapView: View {
     @EnvironmentObject var theme: ThemeManager
     @StateObject var vm: LiveTrackingViewModel
 
-    init(bus: Bus, isHistorical: Bool = false, selectedDate: Date = Date(), sourceStop: String? = nil) {
-        _vm = StateObject(wrappedValue: LiveTrackingViewModel(bus: bus, isHistorical: isHistorical, date: selectedDate, sourceStop: sourceStop))
+    init(bus: Bus, isHistorical: Bool = false, selectedDate: Date = Date(), sourceStop: String? = nil, destinationStop: String? = nil, sourceCoord: Coord? = nil, destinationCoord: Coord? = nil) {
+        _vm = StateObject(wrappedValue: LiveTrackingViewModel(bus: bus, isHistorical: isHistorical, date: selectedDate, sourceStop: sourceStop, destinationStop: destinationStop, sourceCoord: sourceCoord, destinationCoord: destinationCoord))
     }
 
 
     @State private var position: MapCameraPosition = .automatic
-    @State private var showTimeline = false
     @State private var showAlarm = false
 
     @EnvironmentObject var router: AppRouter
@@ -77,6 +76,8 @@ struct LiveTrackingMapView: View {
                     
                     topControls
                     
+                    zoomControls
+
                     mapOverlays
                 } else {
                     // Even in empty history, show top controls so user can go back or open calendar
@@ -86,13 +87,8 @@ struct LiveTrackingMapView: View {
                 // In deviated mode, show only back button
                 VStack {
                     HStack {
-                        Button { router.back() } label: {
-                            Image(systemName: "arrow.left")
-                                .font(.title3.weight(.bold))
-                                .foregroundStyle(theme.current.accent)
-                                .frame(width: 44, height: 44)
-                                .background(Circle().fill(theme.current.card).shadow(radius: 2))
-                        }
+                        // Redundant back button removed
+                        Spacer()
                         Spacer()
                     }
                     .padding(.top, 8)
@@ -106,7 +102,7 @@ struct LiveTrackingMapView: View {
         }
         .sheet(isPresented: $showingCalendar) {
             VStack {
-                DatePicker("Select Date", selection: $vm.selectedDate, displayedComponents: .date)
+                DatePicker("Select Date", selection: $vm.selectedDate, in: ...Date(), displayedComponents: .date)
                     .datePickerStyle(.graphical)
                     .tint(theme.current.accent)
                     .padding()
@@ -142,9 +138,12 @@ struct LiveTrackingMapView: View {
                 )
             }
         }
-        .sheet(isPresented: $showTimeline) {
-            RouteTimelineView(stops: vm.stops)
-                .environmentObject(theme)
+        .onChange(of: vm.selectedBusForDetail) { _, newBus in
+            if let bus = newBus, !bus.route.stops.isEmpty {
+                withAnimation(.easeInOut(duration: 1.5)) {
+                    position = .region(regionForStops(bus.route.stops))
+                }
+            }
         }
         .sheet(isPresented: $showAlarm) {
             SetAlarmSheetView(vm: vm)
@@ -154,23 +153,35 @@ struct LiveTrackingMapView: View {
 
     @MapContentBuilder
     private var mapContent: some MapContent {
-        // Underlay: Full Planned Route (light blue)
+        // Underlay: Full Planned Route (Gray Dashed)
         MapPolyline(coordinates: vm.plannedPolyline.map { $0.cl })
-            .stroke(theme.current.accent.opacity(0.4), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+            .stroke(Color.gray.opacity(0.6), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: [6, 6]))
 
         if busToTrack.isDeviated {
             deviatedMapContent(for: busToTrack)
         } else {
             standardMapContent(for: busToTrack)
         }
+
+        // Search Source/Destination Markers (If coordinates provided)
+        if let sc = vm.sourceCoord {
+            Annotation("Source", coordinate: sc.cl) {
+                MarkerLabel(text: "A", color: .blue)
+            }
+        }
+        if let dc = vm.destinationCoord {
+            Annotation("Destination", coordinate: dc.cl) {
+                MarkerLabel(text: "B", color: .purple)
+            }
+        }
     }
 
     @MapContentBuilder
     private func deviatedMapContent(for busToTrack: Bus) -> some MapContent {
-        // 1. Blue segments (On-route actual path)
+        // 1. Orange segments (On-route actual path)
         ForEach(vm.actualOnRouteSegments) { segment in
             MapPolyline(coordinates: segment.coords.map { $0.cl })
-                .stroke(theme.current.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                .stroke(Color.orange, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
         }
 
         // 2. Red segments (Off-route deviation actual path)
@@ -180,18 +191,6 @@ struct LiveTrackingMapView: View {
         }
         
         if vm.isHistorical {
-            // Direction Arrows on ALL actual path
-            ForEach(Array(busToTrack.actualPolyline.enumerated()), id: \.offset) { idx, coord in
-                if idx % 10 == 0 && idx > 0 && idx < busToTrack.actualPolyline.count - 1 {
-                    Annotation("", coordinate: coord.cl) {
-                        Image(systemName: "chevron.up")
-                            .font(.system(size: 10, weight: .black))
-                            .foregroundStyle(.white)
-                            .rotationEffect(Angle(degrees: calculateBearing(from: busToTrack.actualPolyline[idx-1], to: busToTrack.actualPolyline[idx+1])))
-                    }
-                }
-            }
-            
             historyMarkers(for: busToTrack)
             rejoinMarkers()
         } else {
@@ -269,9 +268,12 @@ struct LiveTrackingMapView: View {
                 .stroke(Color.red, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
         }
         
-        if vm.isLive && !vm.isHistorical && !vm.isIsolatedMode {
-            MapPolyline(coordinates: vm.fullRoutePath.map { $0.cl })
-                .stroke(theme.current.accent.opacity(0.1), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round, dash: [5, 10]))
+        // 3. Upcoming planned route (Dimmed Dashed)
+        let startIndex = Int(vm.currentIndex)
+        if startIndex < vm.fullRoutePath.count - 1 {
+            let upcomingPath = Array(vm.fullRoutePath[startIndex...])
+            MapPolyline(coordinates: upcomingPath.map { $0.cl })
+                .stroke(theme.current.accent.opacity(0.3), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: [4, 4]))
         }
 
         ForEach(0..<vm.stops.count, id: \.self) { index in
@@ -281,7 +283,12 @@ struct LiveTrackingMapView: View {
         if !vm.isHistorical && (!vm.isIsolatedMode || vm.selectedBusForDetail?.id == vm.bus.id) {
             Annotation("Bus \(vm.bus.number)", coordinate: vm.currentCoordinate.cl) {
                 BusMapMarker(bus: vm.bus, theme: theme, isMain: true, isSelected: vm.selectedBusForDetail?.id == vm.bus.id)
-                    .onTapGesture { withAnimation(.spring()) { vm.selectedBusForDetail = vm.bus } }
+                    .onTapGesture { 
+                        withAnimation(.spring()) { 
+                            vm.selectedBusForDetail = vm.bus 
+                            vm.autoRecenter = false
+                        }
+                    }
             }
         }
         
@@ -299,7 +306,12 @@ struct LiveTrackingMapView: View {
                     let stop = otherBus.route.stops[otherBus.currentStopIndex]
                     Annotation(otherBus.number, coordinate: stop.coordinate.cl) {
                         BusMapMarker(bus: otherBus, theme: theme, isMain: false, isSelected: vm.selectedBusForDetail?.id == otherBus.id)
-                            .onTapGesture { withAnimation(.spring()) { vm.selectedBusForDetail = otherBus } }
+                            .onTapGesture { 
+                                withAnimation(.spring()) { 
+                                    vm.selectedBusForDetail = otherBus 
+                                    vm.autoRecenter = false
+                                }
+                            }
                     }
                 }
             }
@@ -309,36 +321,39 @@ struct LiveTrackingMapView: View {
     @MapContentBuilder
     private func stopAnnotation(for index: Int, stop s: Stop) -> some MapContent {
         let busToTrack = vm.selectedBusForDetail ?? vm.bus
-        let liveIndexValue = (busToTrack.id == vm.bus.id) ? Int(vm.currentIndex) : busToTrack.currentStopIndex
+        let currentIndexValue = (busToTrack.id == vm.bus.id) ? vm.currentIndex : Double(busToTrack.currentStopIndex)
+        let liveIndexValue = Int(currentIndexValue)
         
         let isPast = index < liveIndexValue
         let isCurrent = index == liveIndexValue
         
-        if vm.isHistorical {
-            if index == 0 || index == vm.stops.count - 1 {
-                Marker(index == 0 ? "START" : "END", coordinate: s.coordinate.cl)
-            } else {
-                Annotation("", coordinate: s.coordinate.cl) {
-                    Circle().fill(theme.current.accent.opacity(0.3)).frame(width: 4, height: 4)
+        let isStart = index == 0
+        let isEnd = index == vm.stops.count - 1
+        let isTerminal = isStart || isEnd
+        
+        let shouldShowLabel = isCurrent || isTerminal || (index % 5 == 0)
+        
+        if shouldShowLabel || vm.selectedBusForDetail != nil {
+            Annotation(shouldShowLabel ? s.name : "", coordinate: s.coordinate.cl) {
+                if isStart {
+                    StopLocationMarker(icon: "📍", color: .green, isTerminal: true)
+                } else if isEnd {
+                    StopLocationMarker(icon: "📍", color: .red, isTerminal: true)
+                } else if isCurrent {
+                    Image(systemName: "mappin.circle.fill")
+                        .font(.title)
+                        .foregroundStyle(theme.current.accent)
+                        .background(Circle().fill(.white))
+                } else {
+                    StopLocationMarker(icon: "📍", color: isPast ? .gray : theme.current.accent, isTerminal: false)
                 }
             }
         } else {
-            Annotation(s.name, coordinate: s.coordinate.cl) {
-                if isCurrent {
-                    Image(systemName: "mappin.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(theme.current.accent)
-                        .background(Circle().fill(.white))
-                } else if isPast {
-                    Circle()
-                        .fill(theme.current.accent.opacity(0.4))
-                        .frame(width: 8, height: 8)
-                } else {
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 8, height: 8)
-                        .overlay(Circle().stroke(Color.gray, lineWidth: 1))
-                }
+            // Minimalist dot for other stops to reduce View count
+            Annotation("", coordinate: s.coordinate.cl) {
+                Circle()
+                    .fill(isPast ? theme.current.accent.opacity(0.4) : Color.gray.opacity(0.3))
+                    .frame(width: 4, height: 4)
             }
         }
     }
@@ -492,7 +507,7 @@ struct LiveTrackingMapView: View {
                         Text("TOTAL TRIP")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(.gray)
-                        Text("\(displayBus.totalTripDuration ?? 60)m")
+                        Text("\(displayBus.durationMinutes ?? 60)m")
                             .font(.system(size: 24, weight: .black))
                             .foregroundStyle(theme.current.accent)
                     } else if (displayBus.liveTelemetry.speedKmph ?? 0) <= 1 {
@@ -532,13 +547,21 @@ struct LiveTrackingMapView: View {
                 }
             }
             
+            HStack {
+                Text(vm.stops.first?.name ?? "Start")
+                Image(systemName: "arrow.right")
+                Text(vm.stops.last?.name ?? "End")
+            }
+            .font(.subheadline.bold())
+            .foregroundStyle(.gray)
+            
             Divider()
             
             if displayBus.hasReachedDestination {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Bus reached destination")
                         .font(.headline.bold())
-                    Text("Reached in \(displayBus.totalTripDuration ?? 60) minutes")
+                    Text("Reached in \(displayBus.durationMinutes ?? 60) minutes")
                         .font(.subheadline)
                         .foregroundStyle(.gray)
                 }
@@ -572,7 +595,7 @@ struct LiveTrackingMapView: View {
             }
             
             HStack(spacing: 12) {
-                Button { showTimeline = true } label: {
+                Button { router.back() } label: {
                     Text("Detailed Timeline")
                         .font(.subheadline.bold())
                         .foregroundStyle(theme.current.accent)
@@ -599,33 +622,36 @@ struct LiveTrackingMapView: View {
     private var topControls: some View {
         VStack {
             HStack {
-                Button { router.back() } label: {
-                    Image(systemName: "arrow.left")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(theme.current.accent)
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(theme.current.card).shadow(radius: 2))
-                }
                 Spacer()
-                HStack(spacing: 8) {
-                    filterButton(title: "Upcoming", color: .blue, isOn: vm.showUpcoming) { vm.showUpcoming.toggle() }
-                    filterButton(title: "Departed", color: .red, isOn: vm.showDeparted) { vm.showDeparted.toggle() }
-                    filterButton(title: "Scheduled", color: .gray, isOn: vm.showScheduled) { vm.showScheduled.toggle() }
-                }
-                .padding(4)
-                .background(Capsule().fill(Color.white.opacity(0.8)))
-                .shadow(radius: 2)
-                Spacer()
-                Button { showingCalendar = true } label: {
-                    Image(systemName: "calendar")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(theme.current.accent)
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(theme.current.card).shadow(radius: 2))
+                HStack(spacing: 10) {
+                    if SessionManager.shared.userRole == "admin" {
+                        Button { showingCalendar = true } label: {
+                            Image(systemName: "calendar")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(theme.current.accent)
+                                .frame(width: 44, height: 44)
+                                .background(Circle().fill(theme.current.card).shadow(radius: 2))
+                        }
+                    }
+                    
+                    // Dedicated Refresh Button – top right, does NOT overlap map controls
+                    Button {
+                        vm.refresh()
+                        withAnimation(.easeInOut(duration: 1.0)) {
+                            position = .region(regionForStops(vm.stops))
+                        }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(theme.current.accent)
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(theme.current.card).shadow(radius: 2))
+                    }
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, 56) // Below dynamic island / status bar
             .padding(.horizontal, 16)
+
             Spacer()
         }
     }
@@ -691,12 +717,67 @@ struct LiveTrackingMapView: View {
     }
 
     private func regionForStops(_ stops: [Stop]) -> MKCoordinateRegion {
-        guard let first = stops.first else {
-            return MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 12.9716, longitude: 77.5946),
+        guard !stops.isEmpty else {
+            return MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 13.0287, longitude: 80.0071),
                                       span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))
         }
-        return MKCoordinateRegion(center: first.coordinate.cl,
-                                  span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))
+        
+        // Calculate bounding box instead of just First stop
+        var minLat = 90.0, maxLat = -90.0
+        var minLon = 180.0, maxLon = -180.0
+        
+        for stop in stops {
+            minLat = min(minLat, stop.coordinate.lat)
+            maxLat = max(maxLat, stop.coordinate.lat)
+            minLon = min(minLon, stop.coordinate.lon)
+            maxLon = max(maxLon, stop.coordinate.lon)
+        }
+        
+        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
+        let span = MKCoordinateSpan(latitudeDelta: max(maxLat - minLat + 0.02, 0.02), longitudeDelta: max(maxLon - minLon + 0.02, 0.02))
+        
+        return MKCoordinateRegion(center: center, span: span)
+    }
+
+    private var zoomControls: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                VStack(spacing: 8) {
+                    Button(action: { adjustZoom(by: 0.5) }) {
+                        Image(systemName: "plus")
+                            .font(.title3.bold())
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(theme.current.card))
+                            .foregroundStyle(theme.current.text)
+                            .shadow(radius: 4)
+                    }
+                    Button(action: { adjustZoom(by: 2.0) }) {
+                        Image(systemName: "minus")
+                            .font(.title3.bold())
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(theme.current.card))
+                            .foregroundStyle(theme.current.text)
+                            .shadow(radius: 4)
+                    }
+                }
+                .padding(.trailing, 16)
+                .padding(.bottom, 240) // Positioned above dashboard
+            }
+        }
+    }
+
+    private func adjustZoom(by factor: Double) {
+        if let region = position.region {
+            let newSpan = MKCoordinateSpan(
+                latitudeDelta: region.span.latitudeDelta * factor,
+                longitudeDelta: region.span.longitudeDelta * factor
+            )
+            withAnimation {
+                position = .region(MKCoordinateRegion(center: region.center, span: newSpan))
+            }
+        }
     }
 }
 
@@ -764,18 +845,59 @@ struct MarkerLabel: View {
     }
 }
 
+struct StopLocationMarker: View {
+    let icon: String
+    let color: Color
+    let isTerminal: Bool
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            if isTerminal {
+                Text(icon)
+                    .font(.system(size: 24))
+                    .foregroundStyle(color)
+                    .shadow(radius: 2, y: 1)
+            } else {
+                Text(icon)
+                    .font(.system(size: 14))
+                    .foregroundStyle(color)
+            }
+        }
+    }
+}
+
 extension LiveTrackingMapView {
     private var emptyHistoryView: some View {
         VStack(spacing: 16) {
-            Image(systemName: vm.isHistoryScheduled ? "clock.badge.exclamationmark" : "calendar.badge.exclamationmark")
+            Image(systemName: "clock.badge")
                 .font(.system(size: 64))
                 .foregroundStyle(.gray.opacity(0.5))
             
-            Text(vm.isHistoryScheduled ? "Trip scheduled, but tracking history is unavailable for this date." : "No trip recorded for this date")
-                .font(.title3.bold())
+            Text("Scheduled Every Day")
+                .font(.title2.bold())
+                .foregroundStyle(theme.current.accent)
+                
+            Text("Live tracking data / history is currently unavailable for this route on this date.")
+                .font(.subheadline)
                 .foregroundStyle(.gray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
+            
+            if SessionManager.shared.userRole == "admin" {
+                Button {
+                    print("Add Schedule Pressed")
+                } label: {
+                    Text("Add Schedule / Bus Data")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(theme.current.accent)
+                        .foregroundStyle(.white)
+                        .cornerRadius(12)
+                        .padding(.horizontal, 40)
+                }
+                .padding(.top, 12)
+            }
             
             VStack(spacing: 12) {
                 if vm.isHistoryScheduled {

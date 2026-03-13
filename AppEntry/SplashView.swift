@@ -2,8 +2,10 @@ import SwiftUI
 
 struct SplashView: View {
     @EnvironmentObject var theme: ThemeManager
-    @State private var scale: CGFloat = 0.5
+    @State private var scale: CGFloat = 0.7
     @State private var opacity: Double = 0.0
+    @State private var textOffset: CGFloat = 20
+    @State private var isLogoPulsing = false
 
     var body: some View {
         ZStack {
@@ -15,25 +17,47 @@ struct SplashView: View {
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 20) {
+            VStack(spacing: 24) {
                 // Bus Logo
-                Image(systemName: "bus.fill")
-                    .font(.system(size: 80))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.1), radius: 10, y: 5)
+                ZStack {
+                    Circle()
+                        .fill(.white.opacity(0.2))
+                        .frame(width: 140, height: 140)
+                        .scaleEffect(isLogoPulsing ? 1.2 : 1.0)
+                        .opacity(isLogoPulsing ? 0.0 : 0.5)
+                    
+                    Image(systemName: "bus.fill")
+                        .font(.system(size: 80))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.15), radius: 15, y: 8)
+                }
+                .scaleEffect(scale)
+                .opacity(opacity)
                 
-                // App Title
-                Text("Where Is My Bus")
-                    .font(.system(size: 32, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
+                VStack(spacing: 12) {
+                    // App Title
+                    Text("Where Is My Bus")
+                        .font(.system(size: 38, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .offset(y: textOffset)
+                    
+                    Text("Your Daily College Transit Companion")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .offset(y: textOffset)
+                }
+                .opacity(opacity)
             }
-            .scaleEffect(scale)
-            .opacity(opacity)
         }
         .onAppear {
-            withAnimation(.spring(response: 0.8, dampingFraction: 0.6, blendDuration: 0)) {
+            withAnimation(.spring(response: 0.9, dampingFraction: 0.7)) {
                 scale = 1.0
                 opacity = 1.0
+                textOffset = 0
+            }
+            
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false)) {
+                isLogoPulsing = true
             }
         }
     }

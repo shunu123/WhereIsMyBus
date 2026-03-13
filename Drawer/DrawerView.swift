@@ -3,6 +3,8 @@ import SwiftUI
 struct DrawerView: View {
     @EnvironmentObject var theme: ThemeManager
     @EnvironmentObject var router: AppRouter
+    @EnvironmentObject var session: SessionManager
+    @EnvironmentObject var locationManager: LocationManager
 
     @Binding var isOpen: Bool
 
@@ -38,12 +40,22 @@ struct DrawerView: View {
                              }
                             
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Welcome Back!")
-                                    .font(.title2.bold())
-                                    .foregroundStyle(.white)
+                                HStack {
+                                    Text("\(SessionManager.shared.currentUser?.first_name ?? "Welcome") \(SessionManager.shared.currentUser?.last_name ?? "Back")!")
+                                        .font(.title2.bold())
+                                        .foregroundStyle(.white)
+                                    
+                                    Button {
+                                        go(.editProfile)
+                                    } label: {
+                                        Image(systemName: "pencil.circle.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(.white.opacity(0.8))
+                                    }
+                                }
                                 
                                 if let regNo = SessionManager.shared.currentUserRegNo {
-                                    Text(regNo)
+                                    Text("\(regNo) • \(SessionManager.shared.userRole == "admin" ? "Admin" : (SessionManager.shared.currentUser?.department ?? "Student"))")
                                         .font(.subheadline)
                                         .foregroundStyle(.white.opacity(0.9))
                                 }
@@ -51,7 +63,7 @@ struct DrawerView: View {
                                 HStack(spacing: 4) {
                                     Image(systemName: "mappin.and.ellipse")
                                         .font(.caption)
-                                    Text("Chennai")
+                                    Text(locationManager.currentAddress)
                                         .font(.subheadline)
                                 }
                                 .foregroundStyle(.white.opacity(0.8))
@@ -80,7 +92,7 @@ struct DrawerView: View {
                                                 .font(.subheadline.weight(.semibold))
                                                 .foregroundStyle(theme.current.text)
                                             
-                                            Text("Language, Theme & more")
+                                            Text("Theme & more")
                                                 .font(.caption)
                                                 .foregroundStyle(theme.current.secondaryText)
                                         }
@@ -100,22 +112,27 @@ struct DrawerView: View {
                                     drawerRow(icon: "house.fill", title: "Home") { go(.home) }
                                     drawerRow(icon: "bookmark.fill", title: "Saved Routes") { go(.savedRoutes) }
                                     drawerRow(icon: "clock.fill", title: "Recent Searches") { go(.recentSearches) }
-                                }
-                                
-                                Divider()
-                                
-                                // Reports
-                                VStack(alignment: .leading, spacing: 16) {
-                                    Text("REPORTS")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(Color.orange)
                                     
-                                    drawerRow(icon: "clock.arrow.circlepath", title: "Report Bus Delay") { go(.report) }
-                                    drawerRow(icon: "exclamationmark.triangle", title: "Report Route Issue") { go(.report) }
-                                    drawerRow(icon: "person.crop.circle.badge.exclamationmark", title: "Report Driver Behavior") { go(.report) }
+                                    if SessionManager.shared.userRole == "admin" {
+                                        drawerRow(icon: "map.fill", title: "Fleet Activity") { go(.activeFleet) }
+                                        drawerRow(icon: "calendar.badge.plus", title: "Add Bus Schedule") { go(.adminScheduling) }
+                                    }
                                 }
-
+                                
                                 Divider()
+                                
+                                // Reports (Student Only)
+                                if SessionManager.shared.userRole != "admin" {
+                                    VStack(alignment: .leading, spacing: 16) {
+                                        Text("REPORTS")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(Color.orange)
+                                        
+                                        drawerRow(icon: "exclamationmark.bubble.fill", title: "Report Issue") { go(.report) }
+                                    }
+                                    
+                                    Divider()
+                                }
                                 
                                 // Support
                                 VStack(alignment: .leading, spacing: 16) {
@@ -123,7 +140,9 @@ struct DrawerView: View {
                                         .font(.caption.weight(.bold))
                                         .foregroundStyle(Color.green)
                                     
-                                    drawerRow(icon: "questionmark.circle", title: "Help & FAQ") { go(.help) }
+                                    if SessionManager.shared.userRole != "admin" {
+                                        drawerRow(icon: "questionmark.circle", title: "Help & FAQ") { go(.help) }
+                                    }
                                     drawerRow(icon: "info.circle", title: "About") { go(.about) }
                                     drawerRow(icon: "star", title: "Rate App") {
                                         withAnimation {
@@ -137,8 +156,7 @@ struct DrawerView: View {
                                 
                                 // Logout
                                 Button {
-                                    SessionManager.shared.logout()
-                                    // Router/RootShellView will handle user redirection
+                                    session.logout()
                                 } label: {
                                     HStack(spacing: 16) {
                                         Image(systemName: "rectangle.portrait.and.arrow.right")
@@ -195,7 +213,7 @@ struct DrawerView: View {
         .buttonStyle(.plain)
     }
 
-    private func go(_ route: AppRouter.Route) {
+    private func go(_ route: AppRouter.AppPage) {
         withAnimation { isOpen = false }
         router.go(route)
     }

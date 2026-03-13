@@ -45,8 +45,9 @@ struct SetAlarmSheetView: View {
                             .foregroundStyle(theme.current.secondaryText)
 
                         Picker("Stop", selection: $selectedStop) {
-                            ForEach(vm.stops.map(\.name), id: \.self) { name in
-                                Text(name).tag(name)
+                            let upcomingStops = vm.stops.enumerated().filter { Double($0.offset) >= vm.currentIndex }
+                            ForEach(upcomingStops, id: \.element.id) { index, stop in
+                                Text(stop.name).tag(stop.name)
                             }
                         }
                         .pickerStyle(.menu)

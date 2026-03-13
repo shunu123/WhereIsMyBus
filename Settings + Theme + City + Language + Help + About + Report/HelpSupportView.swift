@@ -7,12 +7,18 @@ struct HelpSupportView: View {
     
     @State private var expandedFAQ: String? = nil
     @State private var showingMailSuccess = false
+    @State private var message: String = ""
+    @State private var isSubmitting = false
+    @State private var showAlert = false
+    @State private var alertMessage = ""
     
     let faqs = [
         (q: "How do I track my bus?", a: "Go to the Home screen, enter your starting and ending stops, or search by bus number directly. Once you find your bus, tap the 'TRACK' button to see its live location on the map."),
-        (q: "Is the tracking real-time?", a: "Yes, our system updates the bus location every few seconds to give you the most accurate ETA. Note that slight delays may occur depending on network connectivity."),
-        (q: "Does it work offline?", a: "Live tracking requires an internet connection. However, you can view saved routes and last-known schedules while offline."),
-        (q: "How do I set an alarm?", a: "On the Bus Schedule or Map screen, tap the 'Set Alarm' button. Choose your destination stop and how many stops before you want to be alerted.")
+        (q: "Is the tracking real-time?", a: "Yes, our system updates the bus location every 1-5 seconds. You can see the bus moving smoothly along its route in real-time. If you notice a delay, please check your internet connection."),
+        (q: "What should I do if a bus is diverted?", a: "Diverted routes are shown in red on the map. This happens due to traffic or construction. The system will automatically calculate the best path and keep you updated on the ETA."),
+        (q: "How do I report a driver issue?", a: "Go to Settings -> Report Driver Behavior. You can provide the bus number and details of the incident. This report is sent directly to our administration for immediate action."),
+        (q: "Can I set an arrival alarm?", a: "Yes! When tracking a bus, tap the 'Alarm' icon to set an alert for 1km, 2km, or 5km before your destination. The app will notify you even if it's in the background."),
+        (q: "How do I change the app language or theme?", a: "Navigate to Settings. Under 'APP PREFERENCES', you can select 'Language' to switch between English and Tamil, or 'Theme' to toggle between Light, Dark, and Blue modes.")
     ]
 
     var body: some View {
@@ -105,15 +111,23 @@ struct HelpSupportView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.white.opacity(0.9))
                             
+                            TextField("How can we help you?", text: $message, axis: .vertical)
+                                .padding(12)
+                                .background(Color.white)
+                                .cornerRadius(8)
+                                .foregroundStyle(.black)
+                                .lineLimit(3...5)
+                            
                             Button {
-                                withAnimation { showingMailSuccess = true }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                                    withAnimation { showingMailSuccess = false }
-                                }
+                                submitSupport()
                             } label: {
                                 HStack {
-                                    Image(systemName: "envelope.fill")
-                                    Text("Contact Support")
+                                    if isSubmitting {
+                                        ProgressView().tint(.white)
+                                    } else {
+                                        Image(systemName: "envelope.fill")
+                                        Text("Send Message")
+                                    }
                                 }
                                 .font(.headline.weight(.semibold))
                                 .foregroundStyle(.white)
@@ -124,6 +138,8 @@ struct HelpSupportView: View {
                                         .fill(Color(red: 0.8, green: 0.3, blue: 0.1))
                                 )
                             }
+                            .disabled(message.isEmpty || isSubmitting)
+                            .opacity(message.isEmpty || isSubmitting ? 0.7 : 1.0)
                         }
                         .padding(24)
                         .background(
@@ -163,6 +179,33 @@ struct HelpSupportView: View {
         }
         .background(theme.current.background.ignoresSafeArea())
         .navigationBarHidden(true)
+        .alert("Status", isPresented: $showAlert) {
+            Button("OK") { }
+        } message: {
+            Text(alertMessage)
+        }
+    }
+    
+    func submitSupport() {
+        isSubmitting = true
+        Task {
+            do {
+                try await APIService.shared.postContact(
+                    email: SessionManager.shared.currentUser?.email,
+                    subject: "General Support Request",
+                    message: message
+                )
+                withAnimation { showingMailSuccess = true }
+                message = ""
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    withAnimation { showingMailSuccess = false }
+                }
+            } catch {
+                alertMessage = "Failed to send message: \(error.localizedDescription)"
+                showAlert = true
+            }
+            isSubmitting = false
+        }
     }
 }
 

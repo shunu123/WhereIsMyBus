@@ -48,7 +48,7 @@ struct TripDetailTimelineView: View {
             .background(theme.current.background)
             .ignoresSafeArea(edges: .bottom) // Timeline goes to bottom
         }
-        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
     }
 }
 

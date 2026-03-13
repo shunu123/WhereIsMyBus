@@ -1,4 +1,6 @@
 import SwiftUI
+import CoreLocation
+
 
 struct RouteShellView: View {
     @EnvironmentObject var router: AppRouter
@@ -12,7 +14,7 @@ struct RouteShellView: View {
             NavigationStack(path: $router.path) {
                 HomeView(openDrawer: { withAnimation { isDrawerOpen = true } },
                          locationManager: locationManager)
-                    .navigationDestination(for: AppRouter.Route.self) { route in
+                    .navigationDestination(for: AppRouter.AppPage.self) { route in
                         destination(for: route)
                     }
             }
@@ -30,24 +32,38 @@ struct RouteShellView: View {
             }
         }
         .animation(.easeInOut(duration: 0.28), value: isDrawerOpen)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToBusSchedule"))) { notification in
+            if let busID = notification.object as? String {
+                router.go(.busSchedule(busID: busID))
+            }
+        }
     }
 
     @ViewBuilder
-    private func destination(for route: AppRouter.Route) -> some View {
+    private func destination(for route: AppRouter.AppPage) -> some View {
         switch route {
         case .home:
             HomeView(openDrawer: { withAnimation { isDrawerOpen = true } },
                      locationManager: locationManager)
 
-        case .availableBuses(let from, let to, let via):
-            AvailableBusesView(from: from, to: to, via: via)
+        case .availableBuses(let from, let to, let fromID, let toID, let fromLat, let fromLon, let toLat, let toLon, let via):
+            let fCoord = (fromLat != nil && fromLon != nil) ? CLLocationCoordinate2D(latitude: fromLat!, longitude: fromLon!) : nil
+            let tCoord = (toLat != nil && toLon != nil) ? CLLocationCoordinate2D(latitude: toLat!, longitude: toLon!) : nil
+            AvailableBusesView(origin: from, destination: to, fromID: fromID, toID: toID, fromCoord: fCoord, toCoord: tCoord, via: via)
 
-        case .liveTracking(let busID, let isHistorical, let date, let sourceStop):
+
+
+        case .liveTracking(let busID, let isHistorical, let date, let sourceStop, let destinationStop, let sLat, let sLon, let dLat, let dLon):
             if let bus = BusRepository.shared.bus(by: busID) {
+                let sCoord = (sLat != nil && sLon != nil) ? Coord(lat: sLat!, lon: sLon!) : nil
+                let dCoord = (dLat != nil && dLon != nil) ? Coord(lat: dLat!, lon: dLon!) : nil
                 LiveTrackingMapView(bus: bus,
                                     isHistorical: isHistorical,
                                     selectedDate: date ?? Date(),
-                                    sourceStop: sourceStop)
+                                    sourceStop: sourceStop,
+                                    destinationStop: destinationStop,
+                                    sourceCoord: sCoord,
+                                    destinationCoord: dCoord)
             } else {
                 unavailableView("Bus not found")
             }
@@ -69,13 +85,27 @@ struct RouteShellView: View {
 
         case .report:
             ReportIssueView()
+            
+        case .editProfile:
+            EditProfileView()
+            
+        case .studentData:
+            StudentRosterView()
 
         case .about:
             AboutView()
 
-        case .busSchedule(let busID, let searchPoint):
-            if let bus = BusRepository.shared.bus(by: busID) {
-                BusScheduleView(bus: bus, searchPoint: searchPoint)
+        case .busSchedule(let busID, let searchPoint, let destinationStop, let sLat, let sLon, let dLat, let dLon):
+            if let uuid = UUID(uuidString: busID), let bus = BusRepository.shared.bus(by: uuid) {
+                BusScheduleView(
+                    bus: bus, 
+                    searchPoint: searchPoint, 
+                    destinationStop: destinationStop,
+                    sourceLat: sLat,
+                    sourceLon: sLon,
+                    destLat: dLat,
+                    destLon: dLon
+                )
             } else {
                 unavailableView("Bus schedule unavailable")
             }
@@ -86,11 +116,27 @@ struct RouteShellView: View {
         case .logout:
             LoginView()
 
-        case .routeMap(let buses, let from, let to):
-            RouteMapView(buses: buses, fromStop: from, toStop: to)
+        case .routeMap(let busNumbers, let from, let to):
+            // Fallback since bus objects were removed from navigation temporarily
+            RouteMapView(buses: [], fromStop: from, toStop: to)
+
 
         case .fleetHistory:
             FleetHistoryView()
+            
+        case .activeFleet:
+            ActiveFleetMapView()
+
+        case .allRoutes:
+            AllRoutesView()
+
+        case .routeDetail(let routeID):
+            // Fallback since route object was removed from navigation temporarily
+            unavailableView("Route detail unavailable")
+
+
+        case .registration:
+            RegistrationView()
 
         case .tripDetailTimeline(let tripId, let busNumber, let startTime, let endTime, let trackPoints, let timelineEvents):
             TripDetailTimelineView(
@@ -101,6 +147,13 @@ struct RouteShellView: View {
                 trackPoints: trackPoints,
                 timelineEvents: timelineEvents
             )
+
+        case .adminScheduling:
+            AdminSchedulingView()
+        case .adminHistory:
+            AdminHistoryView()
+        case .studentDashboard:
+            StudentDashboardView()
         }
     }
 

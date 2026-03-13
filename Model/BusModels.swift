@@ -1,4 +1,43 @@
 import Foundation
+import CoreLocation
+
+
+
+/// Single, unique ping type
+struct LocationPing: Identifiable, Hashable, Codable {
+    let id: UUID
+    let timestamp: Date
+    let coordinate: Coord
+
+    init(id: UUID = UUID(), timestamp: Date, coordinate: Coord) {
+        self.id = id
+        self.timestamp = timestamp
+        self.coordinate = coordinate
+    }
+}
+
+struct PathSegment: Identifiable, Hashable, Codable {
+    var id: UUID = UUID()
+    var coords: [Coord]
+    var isDiverted: Bool
+}
+
+/// GPS track point for trip history replay
+struct TripTrackPoint: Identifiable, Hashable, Codable {
+    let id: UUID
+    let timestamp: Date
+    let coordinate: Coord
+    let speed: Double? // km/h
+    let heading: Double? // degrees
+    
+    init(id: UUID = UUID(), timestamp: Date, coordinate: Coord, speed: Double? = nil, heading: Double? = nil) {
+        self.id = id
+        self.timestamp = timestamp
+        self.coordinate = coordinate
+        self.speed = speed
+        self.heading = heading
+    }
+}
 
 enum BusStatus: String, Codable, CaseIterable {
     case onTime = "On Time"
@@ -28,25 +67,31 @@ struct Stop: Identifiable, Hashable, Codable {
     let timeText: String?
     let isMajorStop: Bool
     let platformNumber: String?
+    let stopOrder: Int 
+    let realtimeArrival: Date?
 
-    init(id: String = UUID().uuidString, name: String, coordinate: Coord, timeText: String?, isMajorStop: Bool = true, platformNumber: String? = nil) {
+    init(id: String = UUID().uuidString, name: String, coordinate: Coord, timeText: String?, isMajorStop: Bool = true, platformNumber: String? = nil, stopOrder: Int = 0, realtimeArrival: Date? = nil) {
         self.id = id
         self.name = name
         self.coordinate = coordinate
         self.timeText = timeText
         self.isMajorStop = isMajorStop
         self.platformNumber = platformNumber
+        self.stopOrder = stopOrder
+        self.realtimeArrival = realtimeArrival
     }
 }
 
 struct HistoryStop: Identifiable, Hashable, Codable {
     let id: UUID
     let stopName: String
+    let coordinate: Coord?
     let reachedTime: String? // "HH:MM" or nil
 
-    init(id: UUID = UUID(), stopName: String, reachedTime: String?) {
+    init(id: UUID = UUID(), stopName: String, coordinate: Coord? = nil, reachedTime: String?) {
         self.id = id
         self.stopName = stopName
+        self.coordinate = coordinate
         self.reachedTime = reachedTime
     }
 }
@@ -104,7 +149,10 @@ struct Bus: Identifiable, Hashable, Codable {
     var etaMinutes: Int?
     var route: Route
     var stateInfo: StateInfo?
-    var vehicleId: Int? = nil // Backend ID
+    var vehicleId: Int? = nil // Backend ID (Trip ID)
+    var busId: Int? = nil // Backend Bus ID
+    var extTripId: String? = nil // Stable DTC Trip ID
+    var extRouteId: String? = nil // Original Transit Route ID
     
     // New fields for University Tracking
     var isDeviated: Bool = false
@@ -116,13 +164,21 @@ struct Bus: Identifiable, Hashable, Codable {
     
     // Phase 2: Reached State
     var hasReachedDestination: Bool = false
-    var totalTripDuration: Int? = nil // in minutes
+    var durationMinutes: Int? = nil // Requirement: minutes as int
+    var currentStopName: String? = nil
+    var nextStopName: String? = nil
 
     // History Tracking
     var tripHistory: [String: TripRecord] = [:] // Map: "yyyy-MM-dd" -> TripRecord
 
     var isRunning: Bool {
         trackingStatus == .arriving || (trackingStatus == .halted && !isDeviated)
+    }
+
+    var isNightOwl: Bool {
+        let nightOwl = ["N1", "4", "N5", "N9", "N20", "N22", "N34", "N49", "N53", "N60", "N62", "N63", "66", "N77", "79", "N81", "N87"]
+        let rt = extRouteId?.uppercased() ?? number.uppercased()
+        return nightOwl.contains(rt)
     }
 
     init(
@@ -137,13 +193,18 @@ struct Bus: Identifiable, Hashable, Codable {
         etaMinutes: Int? = nil,
         route: Route,
         stateInfo: StateInfo? = nil,
+        vehicleId: Int? = nil,
+        busId: Int? = nil,
+        extTripId: String? = nil,
         isDeviated: Bool = false,
         currentStopIndex: Int = 0,
         speed: Double = 0.0,
         actualPolyline: [Coord] = [],
         historyStops: [HistoryStop] = [],
         hasReachedDestination: Bool = false,
-        totalTripDuration: Int? = nil,
+        durationMinutes: Int? = nil,
+        currentStopName: String? = nil,
+        nextStopName: String? = nil,
         tripHistory: [String: TripRecord] = [:]
     ) {
         self.id = id
@@ -157,13 +218,18 @@ struct Bus: Identifiable, Hashable, Codable {
         self.etaMinutes = etaMinutes
         self.route = route
         self.stateInfo = stateInfo
+        self.vehicleId = vehicleId
+        self.busId = busId
+        self.extTripId = extTripId
         self.isDeviated = isDeviated
         self.currentStopIndex = currentStopIndex
         self.liveTelemetry = TrackingMetadata(speed: speed)
         self.actualPolyline = actualPolyline
         self.historyStops = historyStops
         self.hasReachedDestination = hasReachedDestination
-        self.totalTripDuration = totalTripDuration
+        self.durationMinutes = durationMinutes
+        self.currentStopName = currentStopName
+        self.nextStopName = nextStopName
         self.tripHistory = tripHistory
     }
 
@@ -203,6 +269,26 @@ struct Bus: Identifiable, Hashable, Codable {
         return Array(route.stops[sourceIndex...])
     }
 
+    /// Returns only the stops between (and including) the given source and destination names.
+    func stopsFromTo(sourceName: String, destinationName: String) -> [Stop] {
+        let src = sourceName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let dst = destinationName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        guard let fromIdx = route.stops.firstIndex(where: {
+            let n = $0.name.lowercased()
+            return n.contains(src) || src.contains(n)
+        }) else { return stopsFrom(sourceName: sourceName) }
+
+        guard let toIdx = route.stops.firstIndex(where: {
+            let n = $0.name.lowercased()
+            return n.contains(dst) || dst.contains(n)
+        }) else { return stopsFrom(sourceName: sourceName) }
+
+        let lo = min(fromIdx, toIdx)
+        let hi = max(fromIdx, toIdx)
+        return Array(route.stops[lo...hi])
+    }
+
     func timeAtStop(name: String) -> String? {
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return route.stops.first(where: { 
@@ -226,6 +312,116 @@ struct Bus: Identifiable, Hashable, Codable {
             return name.contains(normalizedTo) || normalizedTo.contains(name)
         }) ?? (stops.count - 1)
         
-        return max(0, toIdx - fromIdx) * 10 // Assuming 10 mins per stop for simulation
+        return max(0, toIdx - fromIdx) * 10 
     }
+}
+
+struct BusRoute: Codable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let ext_route_id: String?
+    let from_name: String?
+    let to_name: String?
+    var stops: [Stop]?
+
+    var isNightOwl: Bool {
+        let nightOwl = ["N1", "4", "N5", "N9", "N20", "N22", "N34", "N49", "N53", "N60", "N62", "N63", "66", "N77", "79", "N81", "N87"]
+        let rt = ext_route_id?.uppercased() ?? ""
+        return nightOwl.contains(rt)
+    }
+}
+
+// MARK: - API Response Models for Fleet History
+struct FleetHistoryResponse: Codable {
+    let ok: Bool
+    let date: String
+    let data: [FleetTrip]
+}
+
+struct FleetTrip: Codable, Identifiable {
+    var id: UUID { UUID() } // Local identifier for SwiftUI lists
+    let trip_id: Int
+    let bus_id: Int
+    let bus_number: String
+    let route_name: String
+    let start_city: String
+    let status: String?
+    let start_time: String?
+    let end_time: String?
+    let actual_polyline: [FleetGPSPoint]
+    let stops: [FleetStop]?
+}
+
+struct FleetStop: Codable {
+    let stop_name: String
+    let lat: Double
+    let lng: Double
+    let reached_time: String?
+}
+
+struct FleetGPSPoint: Codable {
+    let lat: Double
+    let lng: Double
+    let speed: Double?
+    let heading: Double?
+    let ts: String?
+}
+
+// User and Auth Models
+struct User: Codable, Identifiable {
+    let id: Int
+    let reg_no: String
+    let first_name: String?
+    let last_name: String?
+    let year: Int?
+    let mobile_no: String?
+    let email: String?
+    let college_name: String?
+    let department: String?
+    let specialization: String?
+    let degree: String?
+    let location: String?
+    let bus_stop: String?
+    let role: String // 'student' or 'admin'
+}
+
+struct AuthResponse: Codable {
+    let ok: Bool
+    let user: User?
+    let detail: String?
+    let requires_otp: Bool?
+    let target: String?
+}
+
+struct GenericResponse: Codable {
+    let ok: Bool
+    let msg: String?
+    let detail: String?
+}
+
+// MARK: - Admin Models
+struct StudentRecord: Codable, Identifiable {
+    let id: Int
+    let reg_no: String
+    let first_name: String?
+    let last_name: String?
+    let year: Int?
+    let mobile_no: String?
+    let email: String?
+    let college_name: String?
+    let department: String?
+    let degree: String?
+    let location: String?
+    let bus_stop: String?
+
+    var displayName: String {
+        let f = first_name ?? ""
+        let l = last_name ?? ""
+        return "\(f) \(l)".trimmingCharacters(in: .whitespaces).isEmpty ? "Unknown" : "\(f) \(l)"
+    }
+}
+
+struct StudentsResponse: Codable {
+    let ok: Bool
+    let students: [StudentRecord]
 }

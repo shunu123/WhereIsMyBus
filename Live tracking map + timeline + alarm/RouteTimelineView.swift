@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RouteTimelineView: View {
     @EnvironmentObject var theme: ThemeManager
-    let stops: [Stop]
+    @ObservedObject var vm: LiveTrackingViewModel
 
     var body: some View {
         VStack(spacing: 16) {
@@ -12,7 +12,7 @@ struct RouteTimelineView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(stops) { s in
+                    ForEach(Array(vm.stops.enumerated()), id: \.element.id) { index, s in
                         HStack(spacing: 12) {
                             Circle()
                                 .fill(theme.current.accent)
@@ -24,11 +24,9 @@ struct RouteTimelineView: View {
                                     .font(s.isMajorStop ? .body.bold() : .subheadline)
                                     .foregroundStyle(theme.current.text)
                                 
-                                if let t = s.timeText {
-                                    Text(t)
-                                        .font(.caption2)
-                                        .foregroundStyle(theme.current.secondaryText)
-                                }
+                                Text(vm.formattedETATime(at: index))
+                                    .font(.caption2)
+                                    .foregroundStyle(theme.current.secondaryText)
                             }
                             Spacer()
                         }

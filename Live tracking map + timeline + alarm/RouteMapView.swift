@@ -11,14 +11,17 @@ struct RouteMapView: View {
     
     @State private var position: MapCameraPosition = .automatic
     @State private var selectedBus: Bus?
+    // Road-snapped polyline per bus ID
+    @State private var snappedPolylines: [UUID: [Coord]] = [:]
     
     var body: some View {
         ZStack {
             Map(position: $position, interactionModes: .all) {
-                // Route Polylines for all buses
+                // Road-snapped route polylines
                 ForEach(buses) { bus in
-                    MapPolyline(coordinates: bus.route.stops.map { CLLocationCoordinate2D(latitude: $0.coordinate.lat, longitude: $0.coordinate.lon) })
-                        .stroke(theme.current.accent.opacity(0.4), lineWidth: 3)
+                    let coords = snappedPolylines[bus.id] ?? bus.route.stops.map { $0.coordinate }
+                    MapPolyline(coordinates: coords.map { $0.cl })
+                        .stroke(theme.current.accent.opacity(0.5), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
                 }
 
                 // Stops for the first route
@@ -58,6 +61,12 @@ struct RouteMapView: View {
                 MapCompass()
                 MapScaleView()
             }
+            .onAppear {
+                snapAllRoutes()
+            }
+            .onChange(of: buses) { _, newBuses in
+                snapAllRoutes()
+            }
             
             // Top Header for Dismiss
             VStack {
@@ -91,6 +100,18 @@ struct RouteMapView: View {
             }
         }
         .navigationBarHidden(true)
+    }
+    
+    private func snapAllRoutes() {
+        Task {
+            for bus in buses {
+                let stops = bus.route.stops
+                let snapped = await RoadSnapService.shared.snap(stops: stops)
+                await MainActor.run {
+                    snappedPolylines[bus.id] = snapped
+                }
+            }
+        }
     }
 }
 
@@ -212,7 +233,7 @@ struct BusMapDetailCard: View {
             
             Button {
                 if !bus.isDeviated {
-                    router.go(.busSchedule(busID: bus.id, searchPoint: fromStop))
+                    router.go(.busSchedule(busID: bus.id.uuidString, searchPoint: fromStop))
                 }
             } label: {
                 Text(bus.isDeviated ? "Find Alternative Bus" : "Detailed Timeline")
