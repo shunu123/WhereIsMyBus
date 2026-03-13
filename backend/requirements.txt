@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pymysql
+httpx
+pytz
+redis
+websockets
