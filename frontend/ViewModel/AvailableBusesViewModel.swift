@@ -69,14 +69,13 @@ class AvailableBusesViewModel: ObservableObject {
             self.buses = []
             self.errorText = nil
             
-            // 4. Calculate Road-Snapped Route (Start early with passed coords)
-            await calculateRoute(from: from, to: to, fromID: fromID, toID: toID, passedFrom: fromCoord, passedTo: toCoord)
-
-
             // 0. Prefetch live data for this specific route if via is provided
             if let via {
                 _ = try? await APIService.shared.fetchBuses(forRoute: via)
             }
+            
+            // 4. Calculate Road-Snapped Route (Start early with passed coords)
+            let (resolvedFrom, resolvedTo) = await calculateRoute(from: from, to: to, fromID: fromID, toID: toID, passedFrom: fromCoord, passedTo: toCoord)
             do {
                 var searchResults: [SearchTrip]? = nil
 
@@ -131,8 +130,8 @@ class AvailableBusesViewModel: ObservableObject {
                 }
                 
                 if searchResults == nil || searchResults!.isEmpty {
-                    if let start = fromCoord, let end = toCoord {
-                         print("Trying RouteDiscoveryService fallback...")
+                    if let start = resolvedFrom, let end = resolvedTo {
+                         print("Trying RouteDiscoveryService fallback with resolved coords...")
                          if let matches = try? await RouteDiscoveryService.shared.findRoutes(from: start, to: end), !matches.isEmpty {
                              searchResults = matches.map { m in
                                  SearchTrip(
@@ -146,7 +145,7 @@ class AvailableBusesViewModel: ObservableObject {
                                      extRouteId: m.bus.extRouteId,
                                      fromDeparture: nil,
                                      toArrival: nil,
-                                     durationMinutes: 0,
+                                     durationMinutes: m.bus.durationMinutes, // Map duration appropriately
                                      status: "Live",
                                      busLiveLocation: nil,
                                      nextStopName: nil,
@@ -273,7 +272,7 @@ class AvailableBusesViewModel: ObservableObject {
     }
 
     @MainActor
-    private func calculateRoute(from: String, to: String, fromID: String?, toID: String?, passedFrom: CLLocationCoordinate2D? = nil, passedTo: CLLocationCoordinate2D? = nil) async {
+    private func calculateRoute(from: String, to: String, fromID: String?, toID: String?, passedFrom: CLLocationCoordinate2D? = nil, passedTo: CLLocationCoordinate2D? = nil) async -> (CLLocationCoordinate2D?, CLLocationCoordinate2D?) {
         // Need to find coordinate for from and to
         // Check repo or API for coordinates
         var fromCoord: CLLocationCoordinate2D? = passedFrom
@@ -308,7 +307,7 @@ class AvailableBusesViewModel: ObservableObject {
         
         guard let start = fromCoord, let end = toCoord else { 
             print("Routing: Coordinates not found for \(from) -> \(to)")
-            return 
+            return (fromCoord, toCoord)
         }
         
         do {
@@ -329,6 +328,8 @@ class AvailableBusesViewModel: ObservableObject {
         } catch {
             print("Routing: Failed to calculate route: \(error)")
         }
+        
+        return (start, end)
     }
 
 

@@ -127,9 +127,10 @@ struct StudentDashboardView: View {
                             
                             // Show Direction Button
                             Button {
-                                let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: selected.coordinate))
-                                mapItem.name = selected.name
-                                mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking])
+                                let destination = MKMapItem(placemark: MKPlacemark(coordinate: selected.coordinate))
+                                destination.name = selected.name
+                                let source = MKMapItem.forCurrentLocation()
+                                MKMapItem.openMaps(with: [source, destination], launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking])
                             } label: {
                                 HStack {
                                     Image(systemName: "safari.fill")
