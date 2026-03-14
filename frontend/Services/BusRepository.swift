@@ -24,7 +24,6 @@ final class BusRepository: ObservableObject {
 
     private init() {
         startDailyLoad()
-        startLiveSync()
     }
 
 

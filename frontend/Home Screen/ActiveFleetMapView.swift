@@ -1080,8 +1080,8 @@ struct ActiveFleetMapView: View {
         // 3. Kick off an initial HTTP fetch immediately (covers the brief WS handshake window)
         Task { await fetch() }
 
-        // 4. Fallback Timer — only polls if WebSocket is disconnected (10s interval)
-        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [self] _ in
+        // 4. Fallback Timer — only polls if WebSocket is disconnected (15s interval)
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [self] _ in
             if !WebSocketService.shared.isConnected {
                 refresh()
             }

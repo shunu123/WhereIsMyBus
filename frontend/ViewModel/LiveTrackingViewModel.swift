@@ -561,13 +561,12 @@ final class LiveTrackingViewModel: ObservableObject {
     }
 
     private func tick() {
-        syncWithFullDetails()
         updatePathSegments()
         
-        // Fast polling for the specific bus we are tracking (every 2s)
+        // Fast polling for the specific bus we are tracking (every 15s as a fallback to websockets)
         if !isHistorical {
             fastPollingTick += 1
-            if fastPollingTick >= 4 {
+            if fastPollingTick >= 15 {
                 fastPollingTick = 0
                 syncWithFullDetails()
             }

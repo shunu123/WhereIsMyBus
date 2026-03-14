@@ -302,7 +302,7 @@ class AvailableBusesViewModel: ObservableObject {
         
         // 3. Last fallback: Try to get from current location if 'from' is current/near
         if fromCoord == nil && (from.lowercased().contains("current") || from.lowercased().contains("my loc")) {
-            fromCoord = LocationManager.shared.lastLocation?.coordinate
+            fromCoord = LocationManager.shared.userLocation?.coordinate
         }
 
         
