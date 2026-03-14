@@ -510,8 +510,8 @@ final class LiveTrackingViewModel: ObservableObject {
                 // Filter for our specific bus (vid or route/number match)
                 if let update: WSVehicle = vehicles.first(where: { ($0.vid ?? "") == (self.bus.extTripId ?? "") || ($0.rt ?? "") == self.bus.number }) {
                     // 1. Update Position & Path with smooth animation
+                    let point = Coord(lat: update.latDouble, lon: update.lonDouble)
                     withAnimation(.linear(duration: 0.95)) {
-                        let point = Coord(lat: update.latDouble, lon: update.lonDouble)
                         if self.traveledPath.isEmpty || distance(self.traveledPath.last ?? point, point) > 0.0001 {
                             self.traveledPath.append(point)
                         }
