@@ -1045,7 +1045,9 @@ struct ActiveFleetMapView: View {
                 
                 self.refreshThrottle.throttle {
                     self.hasFetchedOnce = true
-                    self.liveBuses = pts
+                    withAnimation(.linear(duration: 1.0)) {
+                        self.liveBuses = pts
+                    }
                     
                     // Rebuild Quadtree for fast spatial queries
                     let tree = Quadtree(boundary: QuadtreeRect(minLat: 28.0, maxLat: 29.0, minLon: 76.0, maxLon: 78.0), capacity: 32)
@@ -1093,7 +1095,9 @@ struct ActiveFleetMapView: View {
             let pts = try await APIService.shared.fetchLiveFleetGPS()
             await MainActor.run {
                 self.hasFetchedOnce = true
-                self.liveBuses = pts
+                withAnimation(.linear(duration: 1.0)) {
+                    self.liveBuses = pts
+                }
                 
                 // Extract distinct route names for filtering
                 let routes = Set(pts.compactMap { $0.route_name }).sorted()
