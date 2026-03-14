@@ -145,7 +145,7 @@ class AvailableBusesViewModel: ObservableObject {
                                      extRouteId: m.bus.extRouteId,
                                      fromDeparture: nil,
                                      toArrival: nil,
-                                     durationMinutes: m.bus.durationMinutes, // Map duration appropriately
+                                     durationMinutes: 0, // Duration will be overwritten by routing estimation below
                                      status: "Live",
                                      busLiveLocation: nil,
                                      nextStopName: nil,
