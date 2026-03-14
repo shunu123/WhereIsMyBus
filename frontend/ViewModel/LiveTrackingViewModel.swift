@@ -512,7 +512,7 @@ final class LiveTrackingViewModel: ObservableObject {
                     // 1. Update Position & Path with smooth animation
                     let point = Coord(lat: update.latDouble, lon: update.lonDouble)
                     withAnimation(.linear(duration: 0.95)) {
-                        if self.traveledPath.isEmpty || distance(self.traveledPath.last ?? point, point) > 0.0001 {
+                        if self.traveledPath.isEmpty || self.distance(self.traveledPath.last ?? point, point) > 0.0001 {
                             self.traveledPath.append(point)
                         }
                         self.bus.actualPolyline = self.traveledPath
