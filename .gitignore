@@ -4,20 +4,17 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 
-# Local Web Ignores
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
+# Local Web Ignores (web-frontend)
+web-frontend/node_modules/
+web-frontend/dist/
+web-frontend/dist-ssr/
+web-frontend/*.local
+web-frontend/*.log
+web-frontend/npm-debug.log*
+web-frontend/yarn-debug.log*
+web-frontend/yarn-error.log*
+web-frontend/pnpm-debug.log*
+web-frontend/lerna-debug.log*
 
 # Editor directories and files
 .vscode/*

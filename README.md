@@ -38,8 +38,9 @@ WhereIsMyBus/
 
 ### Web Frontend (React)
 1. Ensure Node.js is installed.
-2. Install dependencies: `npm install`
-3. Run the development server: `npm run dev`
+2. Navigate to `web-frontend/`: `cd web-frontend`
+3. Install dependencies: `npm install`
+4. Run the development server: `npm run dev`
 
 ### Backend
 1. Ensure Python 3.x is installed.
