@@ -12,12 +12,13 @@ A next-generation college bus tracking system designed for high performance and 
 ### 📍 Real-Time Tracking
 - **Live Telemetry**: Real-time GPS updates delivered via WebSocket.
 - **Visual Routes**: Dynamic map visualization of bus routes and active stops.
-- **Chennai-Specific Testing**: Pre-seeded with realistic data for Chennai transit routes.
+- Chennai-Specific Testing: Pre-seeded with realistic data for Chennai transit routes.
 
 ## 📂 Project Structure
 
 ```text
 WhereIsMyBus/
+├── web/                  # Web Application (React + Vite)
 ├── frontend/             # iOS Application (Swift/SwiftUI)
 │   ├── WhereIsMyBus.xcodeproj
 │   ├── ViewModels/       # Business logic and state management
@@ -34,6 +35,11 @@ WhereIsMyBus/
 ```
 
 ## 🛠️ Setup Instructions
+
+### Web Frontend (React)
+1. Ensure Node.js is installed.
+2. Install dependencies: `npm install`
+3. Run the development server: `npm run dev`
 
 ### Backend
 1. Ensure Python 3.x is installed.
